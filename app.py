@@ -6,7 +6,7 @@ import json
 import requests
 
 st.set_page_config(
-    page_title="看護業務 15分単位 記録アプリ",
+    page_title="看護業務 記録アプリ",
     layout="centered"
 )
 
