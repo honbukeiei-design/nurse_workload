@@ -81,8 +81,7 @@ def safe_filename_text(text):
     return text
 
 # -----------------------------
-# CSVファイル名作成
-# 日本語を避ける
+# CSVファイル名
 # -----------------------------
 def make_csv_filename(
     selected_date,
@@ -91,6 +90,7 @@ def make_csv_filename(
 ):
 
     ward = safe_filename_text(ward_name)
+
     nurse = safe_filename_text(nurse_id)
 
     timestamp = datetime.now().strftime("%H%M%S")
@@ -111,12 +111,14 @@ def load_all_data():
     if DATA_FILE.exists():
 
         try:
+
             return pd.read_csv(
                 DATA_FILE,
                 encoding="utf-8-sig"
             )
 
         except Exception:
+
             return pd.read_csv(DATA_FILE)
 
     columns = [
@@ -165,6 +167,7 @@ def save_draft():
     for key, value in st.session_state.items():
 
         if isinstance(value, (list, str)):
+
             draft[key] = value
 
     with open(
@@ -204,6 +207,7 @@ def load_draft():
 def delete_draft():
 
     if DRAFT_FILE.exists():
+
         DRAFT_FILE.unlink()
 
 # -----------------------------
@@ -216,19 +220,25 @@ def send_csv_mail(
 ):
 
     smtp_host = st.secrets["SMTP_HOST"]
-    smtp_port = int(st.secrets["SMTP_PORT"])
+
+    smtp_port = int(
+        st.secrets["SMTP_PORT"]
+    )
 
     smtp_user = st.secrets["SMTP_USER"]
-    smtp_password = st.secrets["SMTP_PASSWORD"]
+
+    smtp_password = st.secrets[
+        "SMTP_PASSWORD"
+    ]
 
     mail_from = st.secrets["MAIL_FROM"]
 
     msg = EmailMessage()
 
-    # 日本語Subject OK
     msg["Subject"] = "看護業務CSV提出"
 
     msg["From"] = mail_from
+
     msg["To"] = to_email
 
     msg.set_content(
@@ -331,7 +341,9 @@ with col1:
 
         save_draft()
 
-        st.success("途中保存しました")
+        st.success(
+            "途中保存しました"
+        )
 
 with col2:
 
@@ -339,7 +351,9 @@ with col2:
 
         load_draft()
 
-        st.success("途中保存を読込ました")
+        st.success(
+            "途中保存を読み込みました"
+        )
 
 with col3:
 
@@ -347,7 +361,9 @@ with col3:
 
         delete_draft()
 
-        st.success("途中保存を削除しました")
+        st.success(
+            "途中保存を削除しました"
+        )
 
 st.divider()
 
@@ -371,11 +387,13 @@ for hour in range(24):
             )
 
             end_hour = hour
+
             end_min = minute + 15
 
             if end_min == 60:
 
                 end_min = 0
+
                 end_hour += 1
 
             if end_hour >= 24:
@@ -401,15 +419,14 @@ for hour in range(24):
                 key=state_key
             )
 
+            # -----------------------------
+            # 最大3つ制限
+            # -----------------------------
             if len(selected_tasks) > 3:
 
-                st.warning(
-                    "最大3つまでです"
+                st.error(
+                    "選択は最大3つまでにしてください。"
                 )
-
-                st.session_state[
-                    state_key
-                ] = selected_tasks[:3]
 
 st.divider()
 
@@ -453,11 +470,13 @@ if st.button("提出"):
             )
 
             end_hour = hour
+
             end_min = minute + 15
 
             if end_min == 60:
 
                 end_min = 0
+
                 end_hour += 1
 
             if end_hour >= 24:
@@ -477,14 +496,29 @@ if st.button("提出"):
                 f"{minute}"
             )
 
-            selected_tasks = (
-                st.session_state.get(
-                    state_key,
-                    []
-                )
+            selected_tasks = st.session_state.get(
+                state_key,
+                []
             )
 
+            # -----------------------------
+            # 最大3つチェック
+            # -----------------------------
+            if len(selected_tasks) > 3:
+
+                st.error(
+                    (
+                        f"{start_label} ～ "
+                        f"{end_label} の選択が"
+                        "4つ以上あります。"
+                        "最大3つまでにしてください。"
+                    )
+                )
+
+                st.stop()
+
             if not selected_tasks:
+
                 continue
 
             minutes_per_task = (
@@ -495,7 +529,8 @@ if st.button("提出"):
 
                 records.append({
 
-                    "病棟名称": ward_name,
+                    "病棟名称":
+                    ward_name,
 
                     "日付":
                     selected_date.isoformat(),
@@ -524,14 +559,23 @@ if st.button("提出"):
 
         st.stop()
 
+    # -----------------------------
+    # DataFrame化
+    # -----------------------------
     df_daily = pd.DataFrame(records)
 
+    # -----------------------------
+    # ファイル名生成
+    # -----------------------------
     filename = make_csv_filename(
         selected_date,
         ward_name,
         nurse_id
     )
 
+    # -----------------------------
+    # CSV文字列
+    # -----------------------------
     csv_text = df_daily.to_csv(
         index=False,
         encoding="utf-8-sig"
@@ -541,7 +585,9 @@ if st.button("提出"):
         "utf-8-sig"
     )
 
-    # 個別保存
+    # -----------------------------
+    # 個別CSV保存
+    # -----------------------------
     daily_file = SAVE_DIR / filename
 
     df_daily.to_csv(
@@ -550,9 +596,14 @@ if st.button("提出"):
         encoding="utf-8-sig"
     )
 
-    # 累積保存
+    # -----------------------------
+    # 累積CSV保存
+    # -----------------------------
     append_daily_data(df_daily)
 
+    # -----------------------------
+    # メール送信
+    # -----------------------------
     try:
 
         send_csv_mail(
@@ -583,7 +634,9 @@ if st.button("提出"):
 
         st.error(str(e))
 
-    # ダウンロード
+    # -----------------------------
+    # CSVダウンロード
+    # -----------------------------
     st.download_button(
         label="CSVダウンロード",
         data=csv_bytes,
@@ -591,15 +644,21 @@ if st.button("提出"):
         mime="text/csv"
     )
 
+    # -----------------------------
     # データ表示
-    st.subheader("提出データ")
+    # -----------------------------
+    st.subheader(
+        "提出データ"
+    )
 
     st.dataframe(
         df_daily,
         width="stretch"
     )
 
+    # -----------------------------
     # 集計
+    # -----------------------------
     summary = (
         df_daily.groupby(
             "業務種別"
@@ -610,7 +669,9 @@ if st.button("提出"):
         .round(1)
     )
 
-    st.subheader("業務集計")
+    st.subheader(
+        "業務集計"
+    )
 
     st.dataframe(
         summary.reset_index(),
