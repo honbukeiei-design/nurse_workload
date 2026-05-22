@@ -6,7 +6,7 @@ import json
 import requests
 
 st.set_page_config(
-    page_title="看護業務 記録",
+    page_title="看護業務 記録アプリ",
     layout="centered"
 )
 
@@ -81,7 +81,7 @@ if "draft_loaded" not in st.session_state:
     st.session_state["draft_loaded"] = True
 
 
-st.title("看護業務 記録")
+st.title("看護業務アプリ")
 
 ward_name = st.text_input(
     "病棟名称",
