@@ -1,33 +1,23 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 import json
+import re
+import smtplib
+from email.message import EmailMessage
 
-# -----------------------------
-# 基本設定
-# -----------------------------
 st.set_page_config(
     page_title="看護業務 15分単位 記録アプリ",
     layout="centered"
 )
 
-# -----------------------------
-# 保存先設定
-# Streamlit Cloud対応版
-# -----------------------------
 SAVE_DIR = Path("data")
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
-# 累積保存CSV
 DATA_FILE = SAVE_DIR / "nurse_15min_log.csv"
-
-# 下書き保存ファイル
 DRAFT_FILE = SAVE_DIR / "nurse_draft.json"
 
-# -----------------------------
-# 業務分類
-# -----------------------------
 TASK_TYPES = [
     "身体の清潔",
     "入退院時の世話",
@@ -67,17 +57,26 @@ TASK_TYPES = [
     "その他",
 ]
 
-# -----------------------------
-# CSV読み込み
-# -----------------------------
+
+def safe_filename_text(text):
+    text = str(text).strip()
+    text = re.sub(r'[\\/:*?"<>|]', "_", text)
+    text = re.sub(r"\s+", "_", text)
+    return text
+
+
+def make_csv_filename(selected_date, ward_name, nurse_id):
+    ward = safe_filename_text(ward_name)
+    nurse = safe_filename_text(nurse_id)
+    timestamp = datetime.now().strftime("%H%M%S")
+    return f"{selected_date}_{ward}_{nurse}_看護業務_{timestamp}.csv"
+
+
 def load_all_data():
-
     if DATA_FILE.exists():
-
         try:
             return pd.read_csv(DATA_FILE, encoding="utf-8-sig")
-
-        except:
+        except Exception:
             return pd.read_csv(DATA_FILE)
 
     columns = [
@@ -89,90 +88,82 @@ def load_all_data():
         "業務種別",
         "この業務に割り当てた時間(分)"
     ]
-
     return pd.DataFrame(columns=columns)
 
-# -----------------------------
-# CSV追記
-# -----------------------------
-def append_daily_data(df_daily):
 
+def append_daily_data(df_daily):
     df_all = load_all_data()
 
     if df_all.empty:
         df_all = df_daily.copy()
-
     else:
-        df_all = pd.concat(
-            [df_all, df_daily],
-            ignore_index=True
-        )
+        df_all = pd.concat([df_all, df_daily], ignore_index=True)
 
-    df_all.to_csv(
-        DATA_FILE,
-        index=False,
-        encoding="utf-8-sig"
-    )
+    df_all.to_csv(DATA_FILE, index=False, encoding="utf-8-sig")
 
-# -----------------------------
-# 下書き保存
-# -----------------------------
+
 def save_draft():
-
     draft = {}
 
     for key, value in st.session_state.items():
-
         if isinstance(value, (list, str)):
             draft[key] = value
 
     with open(DRAFT_FILE, "w", encoding="utf-8") as f:
+        json.dump(draft, f, ensure_ascii=False)
 
-        json.dump(
-            draft,
-            f,
-            ensure_ascii=False
-        )
 
-# -----------------------------
-# 下書き読込
-# -----------------------------
 def load_draft():
-
     if DRAFT_FILE.exists():
-
         with open(DRAFT_FILE, "r", encoding="utf-8") as f:
-
             draft = json.load(f)
 
         for key, value in draft.items():
-
             st.session_state[key] = value
 
-# -----------------------------
-# 下書き削除
-# -----------------------------
-def delete_draft():
 
+def delete_draft():
     if DRAFT_FILE.exists():
         DRAFT_FILE.unlink()
 
-# -----------------------------
-# 初回読込
-# -----------------------------
-if "draft_loaded" not in st.session_state:
 
+def send_csv_mail(to_email, filename, csv_bytes):
+    smtp_host = st.secrets["SMTP_HOST"]
+    smtp_port = int(st.secrets["SMTP_PORT"])
+    smtp_user = st.secrets["SMTP_USER"]
+    smtp_password = st.secrets["SMTP_PASSWORD"]
+    mail_from = st.secrets["MAIL_FROM"]
+
+    msg = EmailMessage()
+    msg["Subject"] = f"看護業務CSV提出：{filename}"
+    msg["From"] = mail_from
+    msg["To"] = to_email
+
+    msg.set_content(
+        "看護業務記録CSVを添付します。\n\n"
+        "このメールはStreamlitアプリから自動送信されています。"
+    )
+
+    msg.add_attachment(
+        csv_bytes,
+        maintype="text",
+        subtype="csv",
+        filename=filename
+    )
+
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.starttls()
+        server.login(smtp_user, smtp_password)
+        server.send_message(msg)
+
+
+if "draft_loaded" not in st.session_state:
     load_draft()
     st.session_state["draft_loaded"] = True
 
-# -----------------------------
-# タイトル
-# -----------------------------
+
 st.title("看護業務 15分単位 記録アプリ")
 
-# -----------------------------
-# 基本情報
-# -----------------------------
 ward_name = st.text_input(
     "病棟名称",
     value=st.session_state.get("ward_name", "")
@@ -183,6 +174,11 @@ nurse_id = st.text_input(
     value=st.session_state.get("nurse_id", "")
 )
 
+submit_email = st.text_input(
+    "提出先メールアドレス",
+    value=st.session_state.get("submit_email", "")
+)
+
 selected_date = st.date_input(
     "日付を選択",
     value=date.today()
@@ -190,62 +186,40 @@ selected_date = st.date_input(
 
 st.session_state["ward_name"] = ward_name
 st.session_state["nurse_id"] = nurse_id
+st.session_state["submit_email"] = submit_email
 
 st.markdown("""
 1日24時間を15分刻みで入力します。  
 途中保存可能です。  
-提出時はCSV保存されます。
+提出時はCSVをメール添付で送信します。
 """)
 
 st.divider()
 
-# -----------------------------
-# 下書き操作
-# -----------------------------
 col1, col2, col3 = st.columns(3)
 
 with col1:
-
     if st.button("途中保存"):
-
         save_draft()
-
-        st.success(f"""
-途中保存しました
-
-保存先：
-{DRAFT_FILE.resolve()}
-""")
+        st.success("途中保存しました")
 
 with col2:
-
     if st.button("途中保存を読込"):
-
         load_draft()
-
         st.success("途中保存を読み込みました")
 
 with col3:
-
     if st.button("途中保存削除"):
-
         delete_draft()
-
         st.success("途中保存を削除しました")
 
 st.divider()
 
-# -----------------------------
-# 15分入力
-# -----------------------------
 st.subheader("15分ごとの業務入力")
 
 for hour in range(24):
-
     with st.expander(f"{hour:02d}:00 ～ {hour:02d}:59"):
-
         for minute in [0, 15, 30, 45]:
-
             start_label = f"{hour:02d}:{minute:02d}"
 
             end_hour = hour
@@ -257,7 +231,6 @@ for hour in range(24):
 
             if end_hour >= 24:
                 end_label = "24:00"
-
             else:
                 end_label = f"{end_hour:02d}:{end_min:02d}"
 
@@ -270,34 +243,29 @@ for hour in range(24):
             )
 
             if len(selected_tasks) > 3:
-
                 st.warning("最大3つまでです")
-
                 st.session_state[state_key] = selected_tasks[:3]
 
 st.divider()
 
-# -----------------------------
-# 提出
-# -----------------------------
 if st.button("提出"):
 
     if ward_name == "":
-
         st.warning("病棟名称を入力してください")
         st.stop()
 
     if nurse_id == "":
-
         st.warning("看護師IDを入力してください")
+        st.stop()
+
+    if submit_email == "":
+        st.warning("提出先メールアドレスを入力してください")
         st.stop()
 
     records = []
 
     for hour in range(24):
-
         for minute in [0, 15, 30, 45]:
-
             start_label = f"{hour:02d}:{minute:02d}"
 
             end_hour = hour
@@ -309,16 +277,11 @@ if st.button("提出"):
 
             if end_hour >= 24:
                 end_label = "24:00"
-
             else:
                 end_label = f"{end_hour:02d}:{end_min:02d}"
 
             state_key = f"{selected_date}_{hour}_{minute}"
-
-            selected_tasks = st.session_state.get(
-                state_key,
-                []
-            )
+            selected_tasks = st.session_state.get(state_key, [])
 
             if not selected_tasks:
                 continue
@@ -326,9 +289,7 @@ if st.button("提出"):
             minutes_per_task = 15 / len(selected_tasks)
 
             for task in selected_tasks:
-
                 records.append({
-
                     "病棟名称": ward_name,
                     "日付": selected_date.isoformat(),
                     "看護師ID": nurse_id,
@@ -339,18 +300,17 @@ if st.button("提出"):
                 })
 
     if not records:
-
         st.warning("入力データがありません")
         st.stop()
 
-    # DataFrame化
     df_daily = pd.DataFrame(records)
 
-    # 累積CSV保存
-    append_daily_data(df_daily)
+    filename = make_csv_filename(selected_date, ward_name, nurse_id)
 
-    # 個別CSV保存
-    daily_file = SAVE_DIR / f"nursing_{selected_date}_{nurse_id}.csv"
+    csv_text = df_daily.to_csv(index=False, encoding="utf-8-sig")
+    csv_bytes = csv_text.encode("utf-8-sig")
+
+    daily_file = SAVE_DIR / filename
 
     df_daily.to_csv(
         daily_file,
@@ -358,50 +318,46 @@ if st.button("提出"):
         encoding="utf-8-sig"
     )
 
-    # 下書き削除
-    delete_draft()
+    append_daily_data(df_daily)
 
-    # 表示
-    st.success("提出完了")
+    try:
+        send_csv_mail(
+            to_email=submit_email,
+            filename=filename,
+            csv_bytes=csv_bytes
+        )
 
-    st.success(f"""
-累積CSV保存先：
-{DATA_FILE.resolve()}
+        delete_draft()
+
+        st.success("提出完了：CSVをメール送信しました")
+
+        st.success(f"""
+送信先：
+{submit_email}
+
+添付ファイル名：
+{filename}
 """)
 
-    st.success(f"""
-提出データ保存先：
-{daily_file.resolve()}
-""")
-
-    # ダウンロード
-    csv_data = df_daily.to_csv(
-        index=False,
-        encoding="utf-8-sig"
-    )
+    except Exception as e:
+        st.error("メール送信に失敗しました")
+        st.error(str(e))
 
     st.download_button(
-        label="提出CSVをダウンロード",
-        data=csv_data,
-        file_name=f"nursing_{selected_date}_{nurse_id}.csv",
+        label="提出CSVを手元にダウンロード",
+        data=csv_bytes,
+        file_name=filename,
         mime="text/csv"
     )
 
-    # データ表示
+    st.subheader("提出データ")
     st.dataframe(df_daily, width="stretch")
 
-    # 集計
     summary = (
-        df_daily.groupby("業務種別")[
-            "この業務に割り当てた時間(分)"
-        ]
+        df_daily.groupby("業務種別")["この業務に割り当てた時間(分)"]
         .sum()
         .round(1)
     )
 
     st.subheader("業務集計")
-
-    st.dataframe(
-        summary.reset_index(),
-        width="stretch"
-    )
+    st.dataframe(summary.reset_index(), width="stretch")
