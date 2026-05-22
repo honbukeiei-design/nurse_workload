@@ -74,9 +74,11 @@ def safe_filename_text(text):
 
     text = str(text).strip()
 
-    text = re.sub(r'[\\/:*?"<>|]', "_", text)
-
-    text = re.sub(r"\s+", "_", text)
+    text = re.sub(
+        r"[^A-Za-z0-9_-]",
+        "_",
+        text
+    )
 
     return text
 
@@ -85,19 +87,19 @@ def safe_filename_text(text):
 # -----------------------------
 def make_csv_filename(
     selected_date,
-    ward_name,
     nurse_id
 ):
 
-    ward = safe_filename_text(ward_name)
+    nurse = safe_filename_text(
+        nurse_id
+    )
 
-    nurse = safe_filename_text(nurse_id)
-
-    timestamp = datetime.now().strftime("%H%M%S")
+    timestamp = datetime.now().strftime(
+        "%H%M%S"
+    )
 
     return (
         f"{selected_date}_"
-        f"{ward}_"
         f"{nurse}_"
         f"nursing_work_"
         f"{timestamp}.csv"
@@ -131,7 +133,9 @@ def load_all_data():
         "この業務に割り当てた時間(分)"
     ]
 
-    return pd.DataFrame(columns=columns)
+    return pd.DataFrame(
+        columns=columns
+    )
 
 # -----------------------------
 # CSV追記
@@ -166,7 +170,10 @@ def save_draft():
 
     for key, value in st.session_state.items():
 
-        if isinstance(value, (list, str)):
+        if isinstance(
+            value,
+            (list, str)
+        ):
 
             draft[key] = value
 
@@ -219,23 +226,32 @@ def send_csv_mail(
     csv_bytes
 ):
 
-    smtp_host = st.secrets["SMTP_HOST"]
+    smtp_host = st.secrets[
+        "SMTP_HOST"
+    ]
 
     smtp_port = int(
         st.secrets["SMTP_PORT"]
     )
 
-    smtp_user = st.secrets["SMTP_USER"]
+    smtp_user = st.secrets[
+        "SMTP_USER"
+    ]
 
     smtp_password = st.secrets[
         "SMTP_PASSWORD"
     ]
 
-    mail_from = st.secrets["MAIL_FROM"]
+    mail_from = st.secrets[
+        "MAIL_FROM"
+    ]
 
     msg = EmailMessage()
 
-    msg["Subject"] = "看護業務CSV提出"
+    # ASCIIのみ
+    msg["Subject"] = (
+        "Nursing work CSV submission"
+    )
 
     msg["From"] = mail_from
 
@@ -243,8 +259,9 @@ def send_csv_mail(
 
     msg.set_content(
         (
-            "看護業務記録CSVを添付します。\n\n"
-            "このメールは自動送信です。"
+            "Nursing work CSV file is attached.\n\n"
+            "This email was sent automatically "
+            "from the Streamlit app."
         ),
         charset="utf-8"
     )
@@ -278,7 +295,9 @@ if "draft_loaded" not in st.session_state:
 
     load_draft()
 
-    st.session_state["draft_loaded"] = True
+    st.session_state[
+        "draft_loaded"
+    ] = True
 
 # -----------------------------
 # タイトル
@@ -319,9 +338,17 @@ selected_date = st.date_input(
     value=date.today()
 )
 
-st.session_state["ward_name"] = ward_name
-st.session_state["nurse_id"] = nurse_id
-st.session_state["submit_email"] = submit_email
+st.session_state[
+    "ward_name"
+] = ward_name
+
+st.session_state[
+    "nurse_id"
+] = nurse_id
+
+st.session_state[
+    "submit_email"
+] = submit_email
 
 st.markdown("""
 1日24時間を15分単位で入力します。  
@@ -380,7 +407,12 @@ for hour in range(24):
         f"{hour:02d}:00 ～ {hour:02d}:59"
     ):
 
-        for minute in [0, 15, 30, 45]:
+        for minute in [
+            0,
+            15,
+            30,
+            45
+        ]:
 
             start_label = (
                 f"{hour:02d}:{minute:02d}"
@@ -419,13 +451,11 @@ for hour in range(24):
                 key=state_key
             )
 
-            # -----------------------------
-            # 最大3つ制限
-            # -----------------------------
+            # 最大3つ
             if len(selected_tasks) > 3:
 
                 st.error(
-                    "選択は最大3つまでにしてください。"
+                    "選択は最大3つまでです"
                 )
 
 st.divider()
@@ -463,7 +493,12 @@ if st.button("提出"):
 
     for hour in range(24):
 
-        for minute in [0, 15, 30, 45]:
+        for minute in [
+            0,
+            15,
+            30,
+            45
+        ]:
 
             start_label = (
                 f"{hour:02d}:{minute:02d}"
@@ -496,22 +531,21 @@ if st.button("提出"):
                 f"{minute}"
             )
 
-            selected_tasks = st.session_state.get(
-                state_key,
-                []
+            selected_tasks = (
+                st.session_state.get(
+                    state_key,
+                    []
+                )
             )
 
-            # -----------------------------
             # 最大3つチェック
-            # -----------------------------
             if len(selected_tasks) > 3:
 
                 st.error(
                     (
                         f"{start_label} ～ "
-                        f"{end_label} の選択が"
-                        "4つ以上あります。"
-                        "最大3つまでにしてください。"
+                        f"{end_label} "
+                        "は3つ以下にしてください"
                     )
                 )
 
@@ -565,30 +599,30 @@ if st.button("提出"):
     df_daily = pd.DataFrame(records)
 
     # -----------------------------
-    # ファイル名生成
+    # ファイル名
     # -----------------------------
     filename = make_csv_filename(
         selected_date,
-        ward_name,
         nurse_id
     )
 
     # -----------------------------
-    # CSV文字列
+    # CSV化
     # -----------------------------
     csv_text = df_daily.to_csv(
-        index=False,
-        encoding="utf-8-sig"
+        index=False
     )
 
     csv_bytes = csv_text.encode(
-        "utf-8-sig"
+        "utf-8"
     )
 
     # -----------------------------
-    # 個別CSV保存
+    # 個別保存
     # -----------------------------
-    daily_file = SAVE_DIR / filename
+    daily_file = (
+        SAVE_DIR / filename
+    )
 
     df_daily.to_csv(
         daily_file,
@@ -597,7 +631,7 @@ if st.button("提出"):
     )
 
     # -----------------------------
-    # 累積CSV保存
+    # 累積保存
     # -----------------------------
     append_daily_data(df_daily)
 
@@ -635,7 +669,7 @@ if st.button("提出"):
         st.error(str(e))
 
     # -----------------------------
-    # CSVダウンロード
+    # ダウンロード
     # -----------------------------
     st.download_button(
         label="CSVダウンロード",
@@ -645,7 +679,7 @@ if st.button("提出"):
     )
 
     # -----------------------------
-    # データ表示
+    # 表示
     # -----------------------------
     st.subheader(
         "提出データ"
