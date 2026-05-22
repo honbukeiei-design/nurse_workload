@@ -81,7 +81,7 @@ if "draft_loaded" not in st.session_state:
     st.session_state["draft_loaded"] = True
 
 
-st.title("看護業務 15分単位 記録アプリ")
+st.title("看護業務 記録アプリ")
 
 ward_name = st.text_input(
     "病棟名称",
