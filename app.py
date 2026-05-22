@@ -14,14 +14,16 @@ st.set_page_config(
 
 # -----------------------------
 # 保存先設定
+# Streamlit Cloud対応版
 # -----------------------------
-DESKTOP = Path.home() / "Desktop"
+SAVE_DIR = Path("data")
+SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
 # 累積保存CSV
-DATA_FILE = DESKTOP / "nurse_15min_log.csv"
+DATA_FILE = SAVE_DIR / "nurse_15min_log.csv"
 
 # 下書き保存ファイル
-DRAFT_FILE = DESKTOP / "nurse_draft.json"
+DRAFT_FILE = SAVE_DIR / "nurse_draft.json"
 
 # -----------------------------
 # 業務分類
@@ -69,9 +71,12 @@ TASK_TYPES = [
 # CSV読み込み
 # -----------------------------
 def load_all_data():
+
     if DATA_FILE.exists():
+
         try:
             return pd.read_csv(DATA_FILE, encoding="utf-8-sig")
+
         except:
             return pd.read_csv(DATA_FILE)
 
@@ -96,10 +101,18 @@ def append_daily_data(df_daily):
 
     if df_all.empty:
         df_all = df_daily.copy()
-    else:
-        df_all = pd.concat([df_all, df_daily], ignore_index=True)
 
-    df_all.to_csv(DATA_FILE, index=False, encoding="utf-8-sig")
+    else:
+        df_all = pd.concat(
+            [df_all, df_daily],
+            ignore_index=True
+        )
+
+    df_all.to_csv(
+        DATA_FILE,
+        index=False,
+        encoding="utf-8-sig"
+    )
 
 # -----------------------------
 # 下書き保存
@@ -109,11 +122,17 @@ def save_draft():
     draft = {}
 
     for key, value in st.session_state.items():
+
         if isinstance(value, (list, str)):
             draft[key] = value
 
     with open(DRAFT_FILE, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False)
+
+        json.dump(
+            draft,
+            f,
+            ensure_ascii=False
+        )
 
 # -----------------------------
 # 下書き読込
@@ -123,9 +142,11 @@ def load_draft():
     if DRAFT_FILE.exists():
 
         with open(DRAFT_FILE, "r", encoding="utf-8") as f:
+
             draft = json.load(f)
 
         for key, value in draft.items():
+
             st.session_state[key] = value
 
 # -----------------------------
@@ -140,6 +161,7 @@ def delete_draft():
 # 初回読込
 # -----------------------------
 if "draft_loaded" not in st.session_state:
+
     load_draft()
     st.session_state["draft_loaded"] = True
 
@@ -166,14 +188,13 @@ selected_date = st.date_input(
     value=date.today()
 )
 
-# session保持
 st.session_state["ward_name"] = ward_name
 st.session_state["nurse_id"] = nurse_id
 
 st.markdown("""
 1日24時間を15分刻みで入力します。  
 途中保存可能です。  
-提出時はデスクトップへCSV保存されます。
+提出時はCSV保存されます。
 """)
 
 st.divider()
@@ -184,18 +205,32 @@ st.divider()
 col1, col2, col3 = st.columns(3)
 
 with col1:
+
     if st.button("途中保存"):
+
         save_draft()
-        st.success(f"途中保存しました：{DRAFT_FILE.resolve()}")
+
+        st.success(f"""
+途中保存しました
+
+保存先：
+{DRAFT_FILE.resolve()}
+""")
 
 with col2:
+
     if st.button("途中保存を読込"):
+
         load_draft()
+
         st.success("途中保存を読み込みました")
 
 with col3:
+
     if st.button("途中保存削除"):
+
         delete_draft()
+
         st.success("途中保存を削除しました")
 
 st.divider()
@@ -222,6 +257,7 @@ for hour in range(24):
 
             if end_hour >= 24:
                 end_label = "24:00"
+
             else:
                 end_label = f"{end_hour:02d}:{end_min:02d}"
 
@@ -234,7 +270,9 @@ for hour in range(24):
             )
 
             if len(selected_tasks) > 3:
+
                 st.warning("最大3つまでです")
+
                 st.session_state[state_key] = selected_tasks[:3]
 
 st.divider()
@@ -245,10 +283,12 @@ st.divider()
 if st.button("提出"):
 
     if ward_name == "":
+
         st.warning("病棟名称を入力してください")
         st.stop()
 
     if nurse_id == "":
+
         st.warning("看護師IDを入力してください")
         st.stop()
 
@@ -269,12 +309,16 @@ if st.button("提出"):
 
             if end_hour >= 24:
                 end_label = "24:00"
+
             else:
                 end_label = f"{end_hour:02d}:{end_min:02d}"
 
             state_key = f"{selected_date}_{hour}_{minute}"
 
-            selected_tasks = st.session_state.get(state_key, [])
+            selected_tasks = st.session_state.get(
+                state_key,
+                []
+            )
 
             if not selected_tasks:
                 continue
@@ -284,6 +328,7 @@ if st.button("提出"):
             for task in selected_tasks:
 
                 records.append({
+
                     "病棟名称": ward_name,
                     "日付": selected_date.isoformat(),
                     "看護師ID": nurse_id,
@@ -294,6 +339,7 @@ if st.button("提出"):
                 })
 
     if not records:
+
         st.warning("入力データがありません")
         st.stop()
 
@@ -304,7 +350,7 @@ if st.button("提出"):
     append_daily_data(df_daily)
 
     # 個別CSV保存
-    daily_file = DESKTOP / f"nursing_{selected_date}_{nurse_id}.csv"
+    daily_file = SAVE_DIR / f"nursing_{selected_date}_{nurse_id}.csv"
 
     df_daily.to_csv(
         daily_file,
@@ -328,8 +374,23 @@ if st.button("提出"):
 {daily_file.resolve()}
 """)
 
+    # ダウンロード
+    csv_data = df_daily.to_csv(
+        index=False,
+        encoding="utf-8-sig"
+    )
+
+    st.download_button(
+        label="提出CSVをダウンロード",
+        data=csv_data,
+        file_name=f"nursing_{selected_date}_{nurse_id}.csv",
+        mime="text/csv"
+    )
+
+    # データ表示
     st.dataframe(df_daily, width="stretch")
 
+    # 集計
     summary = (
         df_daily.groupby("業務種別")[
             "この業務に割り当てた時間(分)"
