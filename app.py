@@ -1,23 +1,20 @@
 import streamlit as st
 import pandas as pd
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 import json
-import re
-import smtplib
-from email.message import EmailMessage
-from email.utils import parseaddr
-
+import requests
 
 st.set_page_config(
     page_title="看護業務 15分単位 記録アプリ",
     layout="centered"
 )
 
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxYazh2-dc6TpuelU55rOlNIl_cFW2pWmeGvwGchuxUhJni91FM45fYU4uSmpszTR1Z/exec"
+
 SAVE_DIR = Path("data")
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
-DATA_FILE = SAVE_DIR / "nurse_15min_log.csv"
 DRAFT_FILE = SAVE_DIR / "nurse_draft.json"
 
 TASK_TYPES = [
@@ -31,44 +28,6 @@ TASK_TYPES = [
     "ナースコール", "病棟外の連絡", "電話による連絡", "メッセンジャー業務",
     "事務業務", "管理業務", "職員の健康管理", "ME機器の管理", "その他",
 ]
-
-
-def ascii_safe_text(text):
-    text = str(text).strip()
-    text = re.sub(r"[^A-Za-z0-9_-]", "_", text)
-    text = re.sub(r"_+", "_", text)
-    return text.strip("_") or "unknown"
-
-
-def clean_email(value):
-    _, addr = parseaddr(str(value))
-    return addr.strip()
-
-
-def make_csv_filename(selected_date, ward_name, nurse_id):
-    ward = ascii_safe_text(ward_name)
-    nurse = ascii_safe_text(nurse_id)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return f"{selected_date}_{ward}_{nurse}_nursing_work_{timestamp}.csv"
-
-
-def load_all_data():
-    if DATA_FILE.exists():
-        try:
-            return pd.read_csv(DATA_FILE, encoding="utf-8-sig")
-        except Exception:
-            return pd.read_csv(DATA_FILE)
-
-    return pd.DataFrame(columns=[
-        "病棟名称", "日付", "看護師ID", "開始", "終了",
-        "業務種別", "この業務に割り当てた時間(分)"
-    ])
-
-
-def append_daily_data(df_daily):
-    df_all = load_all_data()
-    df_all = pd.concat([df_all, df_daily], ignore_index=True)
-    df_all.to_csv(DATA_FILE, index=False, encoding="utf-8-sig")
 
 
 def save_draft():
@@ -95,41 +54,26 @@ def delete_draft():
         DRAFT_FILE.unlink()
 
 
-def send_csv_mail(to_email, filename, csv_bytes):
-    smtp_host = str(st.secrets["SMTP_HOST"])
-    smtp_port = int(st.secrets["SMTP_PORT"])
-    smtp_user = clean_email(st.secrets["SMTP_USER"])
-    smtp_password = str(st.secrets["SMTP_PASSWORD"])
-    mail_from = clean_email(st.secrets["MAIL_FROM"])
-    mail_to = clean_email(to_email)
+def send_to_google_sheet(records):
+    payload = {
+        "records": records
+    }
 
-    msg = EmailMessage()
-
-    # 重要：メールヘッダーは完全に英数字のみ
-    msg["Subject"] = "Nursing work CSV submission"
-    msg["From"] = mail_from
-    msg["To"] = mail_to
-
-    msg.set_content(
-        "Nursing work CSV file is attached.\n\n"
-        "This email was sent automatically from the Streamlit app.",
-        charset="utf-8"
+    response = requests.post(
+        APPS_SCRIPT_URL,
+        json=payload,
+        timeout=30
     )
 
-    # 添付ファイル名も完全にASCII化
-    ascii_filename = filename.encode("ascii", errors="ignore").decode("ascii")
+    response.raise_for_status()
 
-    msg.add_attachment(
-        csv_bytes,
-        maintype="application",
-        subtype="octet-stream",
-        filename=ascii_filename
-    )
-
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
-        server.starttls()
-        server.login(smtp_user, smtp_password)
-        server.send_message(msg)
+    try:
+        return response.json()
+    except Exception:
+        return {
+            "status": "unknown",
+            "message": response.text
+        }
 
 
 if "draft_loaded" not in st.session_state:
@@ -149,11 +93,6 @@ nurse_id = st.text_input(
     value=st.session_state.get("nurse_id", "")
 )
 
-submit_email = st.text_input(
-    "提出先メールアドレス",
-    value=st.session_state.get("submit_email", "")
-)
-
 selected_date = st.date_input(
     "日付",
     value=date.today()
@@ -161,12 +100,11 @@ selected_date = st.date_input(
 
 st.session_state["ward_name"] = ward_name
 st.session_state["nurse_id"] = nurse_id
-st.session_state["submit_email"] = submit_email
 
 st.markdown("""
 1日24時間を15分単位で入力します。  
 途中保存が可能です。  
-提出時にCSVをメール送信します。
+提出時にGoogleスプレッドシートへ送信します。
 """)
 
 st.divider()
@@ -229,10 +167,6 @@ if st.button("提出"):
         st.warning("看護師IDを入力してください")
         st.stop()
 
-    if not submit_email:
-        st.warning("提出先メールアドレスを入力してください")
-        st.stop()
-
     records = []
 
     for hour in range(24):
@@ -277,56 +211,26 @@ if st.button("提出"):
 
     df_daily = pd.DataFrame(records)
 
-    filename = make_csv_filename(
-        selected_date,
-        ward_name,
-        nurse_id
-    )
-
-    csv_text = df_daily.to_csv(
-        index=False,
-        encoding="utf-8-sig"
-    )
-
-    csv_bytes = csv_text.encode("utf-8-sig")
-
-    daily_file = SAVE_DIR / filename
-
-    df_daily.to_csv(
-        daily_file,
-        index=False,
-        encoding="utf-8-sig"
-    )
-
-    append_daily_data(df_daily)
-
     try:
-        send_csv_mail(
-            to_email=submit_email,
-            filename=filename,
-            csv_bytes=csv_bytes
-        )
+        result = send_to_google_sheet(records)
 
-        delete_draft()
-
-        st.success("メール送信完了")
-
-        st.success(f"""
-送信先：
-{submit_email}
-
-添付ファイル：
-{filename}
-""")
+        if result.get("status") == "success":
+            delete_draft()
+            st.success(f"提出完了：{result.get('count', len(records))}件をスプレッドシートへ送信しました")
+        else:
+            st.warning("送信しましたが、Apps Script側の返答を確認してください")
+            st.write(result)
 
     except Exception as e:
-        st.error("メール送信に失敗しました")
+        st.error("スプレッドシート送信に失敗しました")
         st.error(str(e))
+
+    csv_data = df_daily.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
 
     st.download_button(
         label="CSVダウンロード",
-        data=csv_bytes,
-        file_name=filename,
+        data=csv_data,
+        file_name=f"nursing_{selected_date}_{ward_name}_{nurse_id}.csv",
         mime="text/csv"
     )
 
