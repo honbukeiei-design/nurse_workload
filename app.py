@@ -110,7 +110,6 @@ def timeline_to_grid(timeline_data):
             continue
 
         idx_list = df.index[df["業務種別"] == task].tolist()
-
         if not idx_list:
             continue
 
@@ -221,82 +220,98 @@ st.session_state["ward_name"] = ward_name
 st.session_state["nurse_id"] = nurse_id
 
 st.info(
-    "チェック中は画面更新されません。横にスクロールして入力し、最後に「入力内容を反映」を押してください。"
+    "横スクロールしても業務種別を表示し、縦スクロールしてもタイムラインを表示し続けます。"
 )
 
 st.markdown(
     """
     <style>
     /*
-    上部操作ボタンを固定
+    画面上部の操作ボタン固定
     */
     div[data-testid="stHorizontalBlock"] {
         position: sticky;
         top: 0;
         background: white;
-        z-index: 999;
+        z-index: 1000;
         padding: 8px 0;
         border-bottom: 1px solid #ddd;
     }
 
     /*
-    data_editorの中を横スクロールしやすくする
+    data_editor全体
     */
     div[data-testid="stDataFrame"] {
         border: 1px solid #ddd;
         border-radius: 8px;
+        overflow: hidden;
     }
 
     /*
-    業務種別列を左固定に近い見え方にする
-    Streamlit内部DOMに依存するため、環境により効き方に差があります
-    */
-    div[data-testid="stDataFrame"] [data-testid="stDataFrameResizable"] {
-        overflow: auto;
-    }
-
-    div[data-testid="stDataFrame"] div[role="gridcell"]:nth-child(2),
-    div[data-testid="stDataFrame"] div[role="columnheader"]:nth-child(2) {
-        position: sticky !important;
-        left: 0 !important;
-        z-index: 20 !important;
-        background: #f7f7f7 !important;
-        font-weight: 700 !important;
-        box-shadow: 2px 0 4px rgba(0,0,0,0.12);
-    }
-
-    /*
-    時刻ヘッダーを見やすく
+    タイムラインのヘッダー行を上固定
     */
     div[data-testid="stDataFrame"] div[role="columnheader"] {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 30 !important;
         background: #eeeeee !important;
         font-size: 12px !important;
         font-weight: 700 !important;
+        border-bottom: 2px solid #aaa !important;
     }
 
     /*
-    チェックボックスをセルいっぱいに近づける
+    業務種別列を左固定
+    Streamlitの内部構造上、環境により nth-child の位置がずれる場合があります。
+    hide_index=True の場合、多くの環境では nth-child(1) が業務種別列です。
+    */
+    div[data-testid="stDataFrame"] div[role="gridcell"]:nth-child(1),
+    div[data-testid="stDataFrame"] div[role="columnheader"]:nth-child(1) {
+        position: sticky !important;
+        left: 0 !important;
+        z-index: 50 !important;
+        background: #f7f7f7 !important;
+        font-weight: 700 !important;
+        min-width: 180px !important;
+        max-width: 180px !important;
+        box-shadow: 3px 0 5px rgba(0,0,0,0.16);
+    }
+
+    /*
+    左上セルは最前面
+    */
+    div[data-testid="stDataFrame"] div[role="columnheader"]:nth-child(1) {
+        z-index: 80 !important;
+        background: #e6e6e6 !important;
+    }
+
+    /*
+    チェックセルを大きくする
     */
     div[data-testid="stDataFrame"] div[role="gridcell"] {
         padding: 0 !important;
-        min-width: 46px !important;
+        min-width: 48px !important;
+        min-height: 42px !important;
     }
 
+    /*
+    チェックボックス拡大
+    */
     div[data-testid="stDataFrame"] input[type="checkbox"] {
-        width: 28px !important;
-        height: 28px !important;
+        width: 30px !important;
+        height: 30px !important;
         transform: scale(1.35);
         cursor: pointer;
         accent-color: #1e88e5;
     }
 
     /*
-    チェックボックスのタップ領域を大きくする
+    タップ領域をセル全体に近づける
     */
     div[data-testid="stDataFrame"] label {
         width: 100% !important;
         height: 100% !important;
-        min-height: 38px !important;
+        min-height: 42px !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
@@ -304,7 +319,7 @@ st.markdown(
     }
 
     /*
-    スマホでタップしやすい行高
+    行高を広めにする
     */
     div[data-testid="stDataFrame"] div[role="row"] {
         min-height: 42px !important;
