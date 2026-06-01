@@ -16,11 +16,17 @@ st.set_page_config(
 # ==================================================
 # Secrets
 # ==================================================
-APP_PASSWORD = st.secrets.get("APP_PASSWORD", "nurse2026")
-APPS_SCRIPT_URL = st.secrets.get(
-    "APPS_SCRIPT_URL",
-    "https://script.google.com/macros/s/AKfycbxYazh2-dc6TpuelU55rOlNIl_cFW2pWmeGvwGchuxUhJni91FM45fYU4uSmpszTR1Z/exec"
-)
+# GitHubにはパスワードやApps Script URLを直接書かず、
+# Streamlit Cloud の Secrets に設定してください。
+try:
+    APP_PASSWORD = st.secrets["APP_PASSWORD"]
+    APPS_SCRIPT_URL = st.secrets["APPS_SCRIPT_URL"]
+except KeyError:
+    st.error(
+        "Streamlit Secrets が未設定です。"
+        "APP_PASSWORD と APPS_SCRIPT_URL を Streamlit Cloud の Secrets に設定してください。"
+    )
+    st.stop()
 
 # ==================================================
 # 表示設定
@@ -252,6 +258,9 @@ st.session_state["nurse_id"] = nurse_id
 
 storage_key = f"nursing_timeline_{selected_date.isoformat()}_{nurse_id or 'no_id'}"
 
+if "clear_timeline_requested" not in st.session_state:
+    st.session_state["clear_timeline_requested"] = False
+
 st.info(
     "セル全体をタップできます。指またはマウスで横になぞると、通過したセルを連続入力できます。業務種別をタップすると具体例を表示します。"
 )
@@ -272,17 +281,8 @@ with col4:
 
 if clear_clicked:
     st.session_state["timeline_data"] = {}
-    streamlit_js_eval(
-        js_expressions=f"""
-        localStorage.removeItem('{storage_key}');
-        try {{
-            window.parent.localStorage.removeItem('{storage_key}');
-        }} catch(e) {{}}
-        """,
-        key="clear_storage"
-    )
+    st.session_state["clear_timeline_requested"] = True
     st.success("入力内容を全消去しました。")
-    st.rerun()
 
 if load_clicked:
     load_draft()
@@ -304,24 +304,21 @@ if load_clicked:
 if delete_clicked:
     delete_draft()
     st.session_state["timeline_data"] = {}
-    streamlit_js_eval(
-        js_expressions=f"""
-        localStorage.removeItem('{storage_key}');
-        try {{
-            window.parent.localStorage.removeItem('{storage_key}');
-        }} catch(e) {{}}
-        """,
-        key="delete_storage"
-    )
+    st.session_state["clear_timeline_requested"] = True
     st.success("途中保存を削除しました。")
-    st.rerun()
 
-initial_data = normalize_timeline(st.session_state.get("timeline_data", {}))
+if st.session_state.get("clear_timeline_requested"):
+    initial_data = {}
+else:
+    initial_data = normalize_timeline(st.session_state.get("timeline_data", {}))
 
 tasks_json = json.dumps(TASK_TYPES, ensure_ascii=False)
 details_json = json.dumps(TASK_DETAILS, ensure_ascii=False)
 slots_json = json.dumps(TIME_SLOTS, ensure_ascii=False)
 initial_json = json.dumps(initial_data, ensure_ascii=False)
+clear_requested_json = json.dumps(
+    bool(st.session_state.get("clear_timeline_requested"))
+)
 
 html_code = f"""
 <!DOCTYPE html>
@@ -519,6 +516,15 @@ const taskDetails = {details_json};
 const timeSlots = {slots_json};
 const storageKey = "{storage_key}";
 let selected = {initial_json};
+const clearRequested = {clear_requested_json};
+
+if (clearRequested) {{
+    selected = {{}};
+    localStorage.removeItem(storageKey);
+    try {{
+        window.parent.localStorage.removeItem(storageKey);
+    }} catch(e) {{}}
+}}
 
 function readStored() {{
     let stored = null;
@@ -551,7 +557,11 @@ function saveSelected() {{
     updateStatus();
 }}
 
-readStored();
+if (!clearRequested) {{
+    readStored();
+}} else {{
+    saveSelected();
+}}
 
 let isPointerDown = false;
 let dragMode = true;
@@ -763,6 +773,9 @@ components.html(
     height=EDITOR_HEIGHT + 45,
     scrolling=False
 )
+
+if st.session_state.get("clear_timeline_requested"):
+    st.session_state["clear_timeline_requested"] = False
 
 reflect_clicked = st.button(
     "入力内容を反映",
