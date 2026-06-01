@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import date
-from pathlib import Path
 import json
 import requests
 import html
@@ -16,11 +15,16 @@ st.set_page_config(
 # ==================================================
 # Secrets
 # ==================================================
-APP_PASSWORD = st.secrets.get("APP_PASSWORD", "nurse2026")
-APPS_SCRIPT_URL = st.secrets.get(
-    "APPS_SCRIPT_URL",
-    "https://script.google.com/macros/s/AKfycbxYazh2-dc6TpuelU55rOlNIl_cFW2pWmeGvwGchuxUhJni91FM45fYU4uSmpszTR1Z/exec"
-)
+def get_required_secret(key):
+    value = st.secrets.get(key)
+    if not value:
+        st.error(f"Streamlit Secrets に {key} が設定されていません。")
+        st.stop()
+    return value
+
+
+APP_PASSWORD = get_required_secret("APP_PASSWORD")
+APPS_SCRIPT_URL = get_required_secret("APPS_SCRIPT_URL")
 
 # ==================================================
 # 表示設定
@@ -29,10 +33,6 @@ EDITOR_HEIGHT = 520
 ROW_HEIGHT = 42
 TASK_COL_WIDTH = 220
 CELL_WIDTH = 56
-
-SAVE_DIR = Path("data")
-SAVE_DIR.mkdir(parents=True, exist_ok=True)
-DRAFT_FILE = SAVE_DIR / "nurse_draft.json"
 
 # ==================================================
 # 業務種別
@@ -171,30 +171,6 @@ def build_records(timeline_data, ward_name, nurse_id, selected_date):
     return records
 
 
-def save_draft():
-    draft = {
-        "ward_name": st.session_state.get("ward_name", ""),
-        "nurse_id": st.session_state.get("nurse_id", ""),
-        "timeline_data": st.session_state.get("timeline_data", {}),
-    }
-
-    with open(DRAFT_FILE, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False)
-
-
-def load_draft():
-    if DRAFT_FILE.exists():
-        with open(DRAFT_FILE, "r", encoding="utf-8") as f:
-            draft = json.load(f)
-
-        for key, value in draft.items():
-            st.session_state[key] = value
-
-
-def delete_draft():
-    if DRAFT_FILE.exists():
-        DRAFT_FILE.unlink()
-
 # ==================================================
 # 認証
 # ==================================================
@@ -218,10 +194,6 @@ if not st.session_state["authenticated"]:
 # ==================================================
 # 初期化
 # ==================================================
-if "draft_loaded" not in st.session_state:
-    load_draft()
-    st.session_state["draft_loaded"] = True
-
 if "timeline_data" not in st.session_state:
     st.session_state["timeline_data"] = {}
 
@@ -255,66 +227,6 @@ storage_key = f"nursing_timeline_{selected_date.isoformat()}_{nurse_id or 'no_id
 st.info(
     "セル全体をタップできます。指またはマウスで横になぞると、通過したセルを連続入力できます。業務種別をタップすると具体例を表示します。"
 )
-
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    clear_clicked = st.button("全消去", use_container_width=True)
-
-with col2:
-    save_clicked = st.button("途中保存", use_container_width=True)
-
-with col3:
-    load_clicked = st.button("途中保存読込", use_container_width=True)
-
-with col4:
-    delete_clicked = st.button("途中保存削除", use_container_width=True)
-
-if clear_clicked:
-    st.session_state["timeline_data"] = {}
-    streamlit_js_eval(
-        js_expressions=f"""
-        localStorage.removeItem('{storage_key}');
-        try {{
-            window.parent.localStorage.removeItem('{storage_key}');
-        }} catch(e) {{}}
-        """,
-        key="clear_storage"
-    )
-    st.success("入力内容を全消去しました。")
-    st.rerun()
-
-if load_clicked:
-    load_draft()
-    draft_json = json.dumps(
-        json.dumps(st.session_state.get("timeline_data", {}), ensure_ascii=False)
-    )
-    streamlit_js_eval(
-        js_expressions=f"""
-        localStorage.setItem('{storage_key}', {draft_json});
-        try {{
-            window.parent.localStorage.setItem('{storage_key}', {draft_json});
-        }} catch(e) {{}}
-        """,
-        key="load_to_storage"
-    )
-    st.success("途中保存を読み込みました。")
-    st.rerun()
-
-if delete_clicked:
-    delete_draft()
-    st.session_state["timeline_data"] = {}
-    streamlit_js_eval(
-        js_expressions=f"""
-        localStorage.removeItem('{storage_key}');
-        try {{
-            window.parent.localStorage.removeItem('{storage_key}');
-        }} catch(e) {{}}
-        """,
-        key="delete_storage"
-    )
-    st.success("途中保存を削除しました。")
-    st.rerun()
 
 initial_data = normalize_timeline(st.session_state.get("timeline_data", {}))
 
@@ -830,7 +742,6 @@ if submit_clicked:
         result = send_to_google_sheet(records)
 
         if result.get("status") == "success":
-            delete_draft()
             st.balloons()
             st.success(
                 f"スプレッドシートへ反映完了しました。送信件数：{result.get('count', len(records))} 件。"
@@ -845,12 +756,6 @@ if submit_clicked:
     except Exception as e:
         st.error("スプレッドシートへの送信に失敗しました。")
         st.exception(e)
-
-if save_clicked:
-    save_draft()
-    st.success(
-        f"途中保存しました。現在 {len(records)} 件、合計 {len(records) * 15} 分です。"
-    )
 
 st.divider()
 st.subheader("参考：入力内容")
