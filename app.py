@@ -91,15 +91,38 @@ def next_time_label(start):
 
 
 def create_empty_grid():
-    data = []
+    rows = []
 
     for task in TASK_TYPES:
         row = {"業務種別": task}
+
         for t in TIME_SLOTS:
             row[t] = False
-        data.append(row)
 
-    return pd.DataFrame(data)
+        rows.append(row)
+
+    return pd.DataFrame(rows)
+
+
+def timeline_to_grid(timeline_data):
+    df = create_empty_grid()
+
+    for task, times in timeline_data.items():
+        if task not in TASK_TYPES:
+            continue
+
+        idx_list = df.index[df["業務種別"] == task].tolist()
+
+        if not idx_list:
+            continue
+
+        idx = idx_list[0]
+
+        for t in times:
+            if t in TIME_SLOTS:
+                df.at[idx, t] = True
+
+    return df
 
 
 def grid_to_timeline(df):
@@ -117,27 +140,6 @@ def grid_to_timeline(df):
             timeline[task] = selected_times
 
     return timeline
-
-
-def timeline_to_grid(timeline_data):
-    df = create_empty_grid()
-
-    for task, times in timeline_data.items():
-        if task not in TASK_TYPES:
-            continue
-
-        row_index = df.index[df["業務種別"] == task]
-
-        if len(row_index) == 0:
-            continue
-
-        idx = row_index[0]
-
-        for t in times:
-            if t in TIME_SLOTS:
-                df.at[idx, t] = True
-
-    return df
 
 
 def build_records(timeline_data, ward_name, nurse_id, selected_date):
@@ -190,6 +192,12 @@ if "draft_loaded" not in st.session_state:
 if "timeline_data" not in st.session_state:
     st.session_state["timeline_data"] = {}
 
+if "editor_df" not in st.session_state:
+    st.session_state["editor_df"] = timeline_to_grid(
+        st.session_state["timeline_data"]
+    )
+
+
 st.title("看護業務 記録アプリ")
 
 col_a, col_b, col_c = st.columns(3)
@@ -216,7 +224,8 @@ st.session_state["ward_name"] = ward_name
 st.session_state["nurse_id"] = nurse_id
 
 st.info(
-    "業務ごとに、実施した15分枠へチェックを入れてください。横スクロールできます。"
+    "業務ごとに、実施した15分枠へチェックを入れてください。"
+    "チェック中は画面更新されません。入力後に「入力内容を反映」を押してください。"
 )
 
 st.markdown(
@@ -230,10 +239,27 @@ st.markdown(
         padding: 8px 0;
         border-bottom: 1px solid #ddd;
     }
+
+    div[data-testid="stDataFrame"] div[role="gridcell"]:nth-child(1),
+    div[data-testid="stDataFrame"] div[role="columnheader"]:nth-child(1) {
+        position: sticky !important;
+        left: 0 !important;
+        z-index: 5 !important;
+        background: #f7f7f7 !important;
+        font-weight: bold !important;
+    }
+
+    div[data-testid="stDataFrame"] div[role="columnheader"] {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 4 !important;
+        background: #eeeeee !important;
+    }
     </style>
     """,
     unsafe_allow_html=True
 )
+
 
 col1, col2, col3 = st.columns(3)
 
@@ -248,48 +274,83 @@ with col3:
 
 if clear_clicked:
     st.session_state["timeline_data"] = {}
+    st.session_state["editor_df"] = create_empty_grid()
     st.success("入力内容を全消去しました。")
     st.rerun()
 
 if load_clicked:
     load_draft()
+    st.session_state["editor_df"] = timeline_to_grid(
+        st.session_state.get("timeline_data", {})
+    )
     st.success("途中保存を読み込みました。")
     st.rerun()
 
-initial_df = timeline_to_grid(
-    st.session_state.get("timeline_data", {})
-)
 
-edited_df = st.data_editor(
-    initial_df,
-    hide_index=True,
-    use_container_width=True,
-    height=720,
-    disabled=["業務種別"],
-    column_config={
-        "業務種別": st.column_config.TextColumn(
-            "業務種別",
-            width="medium"
+with st.form("timeline_input_form"):
+
+    edited_df = st.data_editor(
+        st.session_state["editor_df"],
+        hide_index=True,
+        use_container_width=True,
+        height=720,
+        disabled=["業務種別"],
+        column_order=["業務種別"] + TIME_SLOTS,
+        column_config={
+            "業務種別": st.column_config.TextColumn(
+                "業務種別",
+                width="medium"
+            )
+        },
+        key="timeline_editor",
+        num_rows="fixed"
+    )
+
+    reflect_clicked = st.form_submit_button(
+        "入力内容を反映",
+        type="primary",
+        use_container_width=True
+    )
+
+if reflect_clicked:
+    st.session_state["editor_df"] = edited_df.copy()
+    st.session_state["timeline_data"] = grid_to_timeline(edited_df)
+
+    records = build_records(
+        st.session_state["timeline_data"],
+        ward_name,
+        nurse_id,
+        selected_date
+    )
+
+    if records:
+        st.success(
+            f"入力内容を反映しました。現在 {len(records)} 件、合計 {len(records) * 15} 分です。"
         )
-    },
-    key="timeline_editor"
-)
+    else:
+        st.warning("入力内容がありません。チェックを入れてから反映してください。")
 
-timeline_data = grid_to_timeline(edited_df)
-st.session_state["timeline_data"] = timeline_data
+if save_clicked:
+    save_draft()
+
+    records = build_records(
+        st.session_state.get("timeline_data", {}),
+        ward_name,
+        nurse_id,
+        selected_date
+    )
+
+    st.success(
+        f"途中保存しました。現在 {len(records)} 件、合計 {len(records) * 15} 分です。"
+    )
+
 
 records = build_records(
-    timeline_data,
+    st.session_state.get("timeline_data", {}),
     ward_name,
     nurse_id,
     selected_date
 )
-
-if save_clicked:
-    save_draft()
-    st.success(
-        f"途中保存しました。現在 {len(records)} 件、合計 {len(records) * 15} 分です。"
-    )
 
 st.subheader("入力状況")
 
@@ -316,7 +377,10 @@ if records:
     st.dataframe(summary, use_container_width=True)
 
 else:
-    st.warning("まだ入力がありません。チェックを入れると、ここに件数が表示されます。")
+    st.warning(
+        "まだ反映済みの入力がありません。チェック後に「入力内容を反映」を押してください。"
+    )
+
 
 st.divider()
 
@@ -327,6 +391,7 @@ submit_clicked = st.button(
 )
 
 if submit_clicked:
+
     records = build_records(
         st.session_state.get("timeline_data", {}),
         ward_name,
@@ -343,7 +408,9 @@ if submit_clicked:
         st.stop()
 
     if not records:
-        st.warning("入力データがありません。チェックを入れてから提出してください。")
+        st.warning(
+            "入力データがありません。チェック後に「入力内容を反映」を押してから提出してください。"
+        )
         st.stop()
 
     df_daily = pd.DataFrame(records)
