@@ -1,5 +1,5 @@
 streamlit
 pandas
 requests
-streamlit-js-eval
-streamlit-drawable-canvas pillow
+Pillow
+streamlit-drawable-canvas
