@@ -6,6 +6,7 @@ import json
 import requests
 import html
 import streamlit.components.v1 as components
+from streamlit_js_eval import streamlit_js_eval
 
 st.set_page_config(
     page_title="看護業務 記録アプリ",
@@ -15,24 +16,10 @@ st.set_page_config(
 APP_PASSWORD = st.secrets["APP_PASSWORD"]
 APPS_SCRIPT_URL = st.secrets["APPS_SCRIPT_URL"]
 
-EDITOR_HEIGHT = 480
-ROW_HEIGHT = 44
-
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
-
-if not st.session_state["authenticated"]:
-    st.title("看護業務 記録アプリ")
-    password = st.text_input("パスワードを入力してください", type="password")
-
-    if st.button("ログイン"):
-        if password == APP_PASSWORD:
-            st.session_state["authenticated"] = True
-            st.rerun()
-        else:
-            st.error("パスワードが違います")
-
-    st.stop()
+EDITOR_HEIGHT = 520
+ROW_HEIGHT = 42
+TASK_COL_WIDTH = 220
+CELL_WIDTH = 54
 
 SAVE_DIR = Path("data")
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
@@ -111,6 +98,7 @@ def send_to_google_sheet(records):
         timeout=30
     )
     response.raise_for_status()
+
     try:
         return response.json()
     except Exception:
@@ -120,42 +108,41 @@ def send_to_google_sheet(records):
 def next_time_label(start):
     hour, minute = map(int, start.split(":"))
     minute += 15
+
     if minute == 60:
         minute = 0
         hour += 1
+
     if hour >= 24:
         return "24:00"
+
     return f"{hour:02d}:{minute:02d}"
 
 
-def create_empty_grid():
-    return pd.DataFrame([{t: False for t in TIME_SLOTS} for _ in TASK_TYPES])
+def normalize_timeline(data):
+    if not isinstance(data, dict):
+        return {}
 
+    clean = {}
 
-def timeline_to_grid(timeline_data):
-    df = create_empty_grid()
-    for task, times in timeline_data.items():
+    for task, times in data.items():
         if task not in TASK_TYPES:
             continue
-        idx = TASK_TYPES.index(task)
-        for t in times:
-            if t in TIME_SLOTS:
-                df.at[idx, t] = True
-    return df
 
+        clean_times = [
+            t for t in times
+            if t in TIME_SLOTS
+        ]
 
-def grid_to_timeline(df):
-    timeline = {}
-    for idx, row in df.iterrows():
-        task = TASK_TYPES[idx]
-        selected_times = [t for t in TIME_SLOTS if bool(row[t])]
-        if selected_times:
-            timeline[task] = selected_times
-    return timeline
+        if clean_times:
+            clean[task] = sorted(list(set(clean_times)))
+
+    return clean
 
 
 def build_records(timeline_data, ward_name, nurse_id, selected_date):
     records = []
+
     for task, times in timeline_data.items():
         for start_label in sorted(times):
             records.append({
@@ -167,6 +154,7 @@ def build_records(timeline_data, ward_name, nurse_id, selected_date):
                 "業務種別": task,
                 "この業務に割り当てた時間(分)": 15
             })
+
     return records
 
 
@@ -176,6 +164,7 @@ def save_draft():
         "nurse_id": st.session_state.get("nurse_id", ""),
         "timeline_data": st.session_state.get("timeline_data", {}),
     }
+
     with open(DRAFT_FILE, "w", encoding="utf-8") as f:
         json.dump(draft, f, ensure_ascii=False)
 
@@ -184,6 +173,7 @@ def load_draft():
     if DRAFT_FILE.exists():
         with open(DRAFT_FILE, "r", encoding="utf-8") as f:
             draft = json.load(f)
+
         for key, value in draft.items():
             st.session_state[key] = value
 
@@ -193,6 +183,23 @@ def delete_draft():
         DRAFT_FILE.unlink()
 
 
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if not st.session_state["authenticated"]:
+    st.title("看護業務 記録アプリ")
+
+    password = st.text_input("パスワードを入力してください", type="password")
+
+    if st.button("ログイン"):
+        if password == APP_PASSWORD:
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("パスワードが違います")
+
+    st.stop()
+
 if "draft_loaded" not in st.session_state:
     load_draft()
     st.session_state["draft_loaded"] = True
@@ -200,18 +207,21 @@ if "draft_loaded" not in st.session_state:
 if "timeline_data" not in st.session_state:
     st.session_state["timeline_data"] = {}
 
-if "editor_df" not in st.session_state:
-    st.session_state["editor_df"] = timeline_to_grid(st.session_state["timeline_data"])
-
 st.title("看護業務 記録アプリ")
 
 col_a, col_b, col_c = st.columns(3)
 
 with col_a:
-    ward_name = st.text_input("病棟名称", value=st.session_state.get("ward_name", ""))
+    ward_name = st.text_input(
+        "病棟名称",
+        value=st.session_state.get("ward_name", "")
+    )
 
 with col_b:
-    nurse_id = st.text_input("看護師ID", value=st.session_state.get("nurse_id", ""))
+    nurse_id = st.text_input(
+        "看護師ID",
+        value=st.session_state.get("nurse_id", "")
+    )
 
 with col_c:
     selected_date = st.date_input("日付", value=date.today())
@@ -219,178 +229,10 @@ with col_c:
 st.session_state["ward_name"] = ward_name
 st.session_state["nurse_id"] = nurse_id
 
-st.info("セル全体を押しやすくしています。入力後は「入力内容を反映」、その下の「提出」で送信します。")
+storage_key = f"nursing_timeline_{selected_date.isoformat()}_{nurse_id or 'no_id'}"
 
-st.markdown(
-    f"""
-    <style>
-    section.main > div {{
-        max-width: 100%;
-        padding-left: 1rem;
-        padding-right: 1rem;
-    }}
-
-    div[data-testid="stHorizontalBlock"] {{
-        position: sticky;
-        top: 0;
-        background: white;
-        z-index: 1000;
-        padding: 8px 0;
-        border-bottom: 1px solid #ddd;
-    }}
-
-    .task-panel {{
-        height: {EDITOR_HEIGHT}px;
-        overflow-y: auto;
-        overflow-x: hidden;
-        border: 1px solid #ddd;
-        border-radius: 8px;
-        background: #f7f7f7;
-    }}
-
-    .task-header {{
-        height: 42px;
-        line-height: 42px;
-        padding-left: 10px;
-        font-weight: 700;
-        background: #e8e8e8;
-        border-bottom: 1px solid #ccc;
-        position: sticky;
-        top: 0;
-        z-index: 20;
-    }}
-
-    .task-row {{
-        height: {ROW_HEIGHT}px;
-        line-height: {ROW_HEIGHT}px;
-        padding-left: 10px;
-        border-bottom: 1px solid #e1e1e1;
-        font-size: 14px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        cursor: pointer;
-    }}
-
-    .task-row:hover {{
-        background: #eaf4ff;
-        font-weight: 700;
-    }}
-
-    .task-modal-backdrop {{
-        display: none;
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.35);
-        z-index: 99998;
-    }}
-
-    .task-modal {{
-        display: none;
-        position: fixed;
-        left: 50%;
-        top: 50%;
-        transform: translate(-50%, -50%);
-        width: min(760px, calc(100vw - 32px));
-        max-height: 70vh;
-        overflow-y: auto;
-        background: white;
-        border-radius: 14px;
-        border: 1px solid #94a3b8;
-        box-shadow: 0 12px 32px rgba(0,0,0,0.28);
-        z-index: 99999;
-        padding: 18px 20px;
-    }}
-
-    .task-modal-title {{
-        font-weight: 800;
-        font-size: 18px;
-        margin-bottom: 10px;
-    }}
-
-    .task-modal-body {{
-        line-height: 1.8;
-        font-size: 15px;
-    }}
-
-    .task-modal-close {{
-        margin-top: 16px;
-        padding: 8px 14px;
-        border: 1px solid #94a3b8;
-        border-radius: 8px;
-        background: #f8fafc;
-        cursor: pointer;
-        font-weight: 700;
-    }}
-
-    div[data-testid="stDataFrame"] {{
-        height: {EDITOR_HEIGHT}px !important;
-        border: 1px solid #ddd;
-        border-radius: 8px;
-        overflow: hidden;
-    }}
-
-    div[data-testid="stDataFrame"] div[role="columnheader"] {{
-        position: sticky !important;
-        top: 0 !important;
-        z-index: 50 !important;
-        background: #eeeeee !important;
-        font-size: 12px !important;
-        font-weight: 700 !important;
-        border-bottom: 2px solid #aaa !important;
-    }}
-
-    div[data-testid="stDataFrame"] div[role="gridcell"] {{
-        padding: 0 !important;
-        min-width: 58px !important;
-        min-height: {ROW_HEIGHT}px !important;
-    }}
-
-    div[data-testid="stDataFrame"] div[role="row"] {{
-        min-height: {ROW_HEIGHT}px !important;
-    }}
-
-    div[data-testid="stDataFrame"] label {{
-        width: 100% !important;
-        height: 100% !important;
-        min-height: {ROW_HEIGHT}px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        cursor: pointer !important;
-        padding: 0 !important;
-    }}
-
-    div[data-testid="stDataFrame"] input[type="checkbox"] {{
-        width: 38px !important;
-        height: 38px !important;
-        transform: scale(1.25);
-        cursor: pointer;
-        accent-color: #1e88e5;
-    }}
-
-    @media screen and (max-width: 900px) {{
-        section.main > div {{
-            padding-left: 0.4rem;
-            padding-right: 0.4rem;
-        }}
-
-        div[data-testid="stDataFrame"] div[role="gridcell"] {{
-            min-width: 64px !important;
-        }}
-
-        div[data-testid="stDataFrame"] input[type="checkbox"] {{
-            width: 42px !important;
-            height: 42px !important;
-        }}
-
-        .task-row {{
-            font-size: 12px;
-        }}
-    }}
-    </style>
-    """,
-    unsafe_allow_html=True
+st.info(
+    "セル全体をタップできます。指またはマウスで横になぞると、通過したセルを連続入力できます。"
 )
 
 col1, col2, col3, col4 = st.columns(4)
@@ -409,306 +251,528 @@ with col4:
 
 if clear_clicked:
     st.session_state["timeline_data"] = {}
-    st.session_state["editor_df"] = create_empty_grid()
+    streamlit_js_eval(
+        js_expressions=f"localStorage.removeItem('{storage_key}')",
+        key="clear_storage"
+    )
     st.success("入力内容を全消去しました。")
     st.rerun()
 
 if load_clicked:
     load_draft()
-    st.session_state["editor_df"] = timeline_to_grid(st.session_state.get("timeline_data", {}))
+    streamlit_js_eval(
+        js_expressions=(
+            f"localStorage.setItem('{storage_key}', "
+            f"{json.dumps(json.dumps(st.session_state.get('timeline_data', {}), ensure_ascii=False))})"
+        ),
+        key="load_to_storage"
+    )
     st.success("途中保存を読み込みました。")
     st.rerun()
 
 if delete_clicked:
     delete_draft()
     st.session_state["timeline_data"] = {}
-    st.session_state["editor_df"] = create_empty_grid()
+    streamlit_js_eval(
+        js_expressions=f"localStorage.removeItem('{storage_key}')",
+        key="delete_storage"
+    )
     st.success("途中保存を削除しました。")
     st.rerun()
 
-column_config = {}
+initial_data = normalize_timeline(st.session_state.get("timeline_data", {}))
 
-for t in TIME_SLOTS:
-    label = t if t.endswith(":00") else t[-2:]
-    column_config[t] = st.column_config.CheckboxColumn(
-        label,
-        width="small",
-        help=t
-    )
+tasks_json = json.dumps(TASK_TYPES, ensure_ascii=False)
+details_json = json.dumps(TASK_DETAILS, ensure_ascii=False)
+slots_json = json.dumps(TIME_SLOTS, ensure_ascii=False)
+initial_json = json.dumps(initial_data, ensure_ascii=False)
 
-left_col, right_col = st.columns([1.3, 8.7], gap="small")
+html_code = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+* {{
+    box-sizing: border-box;
+}}
 
-with left_col:
-    task_html = """
-    <div class="task-panel" id="task-panel">
-        <div class="task-header">業務種別</div>
-    """
+body {{
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}}
 
-    for task in TASK_TYPES:
-        safe_task = html.escape(task)
-        safe_detail = html.escape(TASK_DETAILS.get(task, ""), quote=True)
-        task_html += (
-            f'<div class="task-row" '
-            f'data-task="{safe_task}" '
-            f'data-detail="{safe_detail}">'
-            f'{safe_task}'
-            f'</div>'
-        )
+.timeline-shell {{
+    width: 100%;
+    height: {EDITOR_HEIGHT}px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    overflow: auto;
+    background: #ffffff;
+    touch-action: pan-x pan-y;
+}}
 
-    task_html += """
-    </div>
+.timeline-grid {{
+    display: grid;
+    grid-template-columns: {TASK_COL_WIDTH}px repeat({len(TIME_SLOTS)}, {CELL_WIDTH}px);
+    width: max-content;
+    min-width: 100%;
+    user-select: none;
+}}
 
-    <div class="task-modal-backdrop" id="task-modal-backdrop"></div>
-    <div class="task-modal" id="task-modal">
-        <div class="task-modal-title" id="task-modal-title"></div>
-        <div class="task-modal-body" id="task-modal-body"></div>
-        <button class="task-modal-close" id="task-modal-close">閉じる</button>
-    </div>
-    """
+.corner,
+.time-header,
+.task-name,
+.cell {{
+    border-right: 1px solid #d6d6d6;
+    border-bottom: 1px solid #e5e7eb;
+}}
 
-    st.markdown(task_html, unsafe_allow_html=True)
+.corner {{
+    position: sticky;
+    left: 0;
+    top: 0;
+    z-index: 40;
+    height: {ROW_HEIGHT}px;
+    line-height: {ROW_HEIGHT}px;
+    padding-left: 10px;
+    background: #e5e7eb;
+    font-weight: 800;
+}}
 
-with right_col:
-    with st.form("timeline_input_form", clear_on_submit=False):
-        edited_df = st.data_editor(
-            st.session_state["editor_df"],
-            hide_index=True,
-            use_container_width=True,
-            height=EDITOR_HEIGHT,
-            column_order=TIME_SLOTS,
-            column_config=column_config,
-            key="timeline_editor",
-            num_rows="fixed"
-        )
+.time-header {{
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    height: {ROW_HEIGHT}px;
+    line-height: {ROW_HEIGHT}px;
+    text-align: center;
+    background: #f3f4f6;
+    font-size: 12px;
+    font-weight: 700;
+}}
 
-        reflect_clicked = st.form_submit_button(
-            "入力内容を反映",
-            type="secondary",
-            use_container_width=True
-        )
+.task-name {{
+    position: sticky;
+    left: 0;
+    z-index: 20;
+    height: {ROW_HEIGHT}px;
+    line-height: {ROW_HEIGHT}px;
+    padding-left: 10px;
+    background: #f9fafb;
+    font-size: 14px;
+    font-weight: 650;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.08);
+}}
 
-        submit_clicked = st.form_submit_button(
-            "提出",
-            type="primary",
-            use_container_width=True
-        )
+.task-name:hover {{
+    background: #eaf4ff;
+}}
+
+.cell {{
+    height: {ROW_HEIGHT}px;
+    min-width: {CELL_WIDTH}px;
+    background: #ffffff;
+    cursor: pointer;
+    touch-action: none;
+}}
+
+.cell.hour-start {{
+    border-left: 2px solid #9ca3af;
+}}
+
+.cell.selected {{
+    background: #1e88e5;
+    box-shadow: inset 0 0 0 2px #ffffff;
+}}
+
+.cell.drag-preview {{
+    outline: 2px solid #111827;
+    outline-offset: -2px;
+}}
+
+.cell:active {{
+    background: #bfdbfe;
+}}
+
+.controls {{
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-top: 10px;
+}}
+
+.btn {{
+    width: 100%;
+    border: 0;
+    border-radius: 8px;
+    padding: 12px 10px;
+    font-size: 16px;
+    font-weight: 800;
+    cursor: pointer;
+}}
+
+.btn-reflect {{
+    background: #e5e7eb;
+    color: #111827;
+}}
+
+.btn-submit {{
+    background: #1e88e5;
+    color: #ffffff;
+}}
+
+.status {{
+    margin-top: 8px;
+    font-size: 14px;
+    color: #374151;
+}}
+
+.modal-backdrop {{
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.35);
+    z-index: 9998;
+}}
+
+.modal {{
+    display: none;
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(760px, calc(100vw - 32px));
+    max-height: 70vh;
+    overflow-y: auto;
+    background: #ffffff;
+    border-radius: 14px;
+    border: 1px solid #94a3b8;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.28);
+    z-index: 9999;
+    padding: 18px 20px;
+}}
+
+.modal-title {{
+    font-weight: 800;
+    font-size: 18px;
+    margin-bottom: 10px;
+}}
+
+.modal-body {{
+    line-height: 1.8;
+    font-size: 15px;
+}}
+
+.modal-close {{
+    margin-top: 16px;
+    padding: 9px 16px;
+    border: 1px solid #94a3b8;
+    border-radius: 8px;
+    background: #f8fafc;
+    cursor: pointer;
+    font-weight: 800;
+}}
+
+@media screen and (max-width: 900px) {{
+    .timeline-grid {{
+        grid-template-columns: 170px repeat({len(TIME_SLOTS)}, 58px);
+    }}
+
+    .task-name,
+    .corner {{
+        font-size: 12px;
+    }}
+
+    .cell {{
+        min-width: 58px;
+    }}
+}}
+</style>
+</head>
+<body>
+
+<div class="timeline-shell" id="timelineShell">
+    <div class="timeline-grid" id="timelineGrid"></div>
+</div>
+
+<div class="controls">
+    <button class="btn btn-reflect" id="reflectBtn">入力内容を反映</button>
+    <button class="btn btn-submit" id="submitBtn">提出</button>
+</div>
+
+<div class="status" id="statusText"></div>
+
+<div class="modal-backdrop" id="modalBackdrop"></div>
+<div class="modal" id="modal">
+    <div class="modal-title" id="modalTitle"></div>
+    <div class="modal-body" id="modalBody"></div>
+    <button class="modal-close" id="modalClose">閉じる</button>
+</div>
+
+<script>
+const tasks = {tasks_json};
+const taskDetails = {details_json};
+const timeSlots = {slots_json};
+const storageKey = "{storage_key}";
+let selected = {initial_json};
+
+const stored = localStorage.getItem(storageKey);
+if (stored) {{
+    try {{
+        selected = JSON.parse(stored) || selected;
+    }} catch(e) {{}}
+}} else {{
+    localStorage.setItem(storageKey, JSON.stringify(selected));
+}}
+
+let isPointerDown = false;
+let dragMode = true;
+let activePointerId = null;
+let lastCellKey = null;
+let didMove = false;
+
+const grid = document.getElementById("timelineGrid");
+const statusText = document.getElementById("statusText");
+
+function saveSelected() {{
+    localStorage.setItem(storageKey, JSON.stringify(selected));
+    updateStatus();
+}}
+
+function countSelected() {{
+    let count = 0;
+    Object.keys(selected).forEach(task => {{
+        count += selected[task].length;
+    }});
+    return count;
+}}
+
+function updateStatus() {{
+    const count = countSelected();
+    statusText.textContent = `現在の入力：${{count}}件、合計 ${{count * 15}} 分`;
+}}
+
+function normalizeSelected() {{
+    Object.keys(selected).forEach(task => {{
+        selected[task] = Array.from(new Set(selected[task])).sort();
+        if (selected[task].length === 0) {{
+            delete selected[task];
+        }}
+    }});
+}}
+
+function isSelected(task, time) {{
+    return selected[task] && selected[task].includes(time);
+}}
+
+function setCell(cell, mode) {{
+    if (!cell || !cell.classList.contains("cell")) return;
+
+    const task = cell.dataset.task;
+    const time = cell.dataset.time;
+
+    if (!selected[task]) {{
+        selected[task] = [];
+    }}
+
+    if (mode) {{
+        if (!selected[task].includes(time)) {{
+            selected[task].push(time);
+        }}
+        cell.classList.add("selected");
+    }} else {{
+        selected[task] = selected[task].filter(t => t !== time);
+        cell.classList.remove("selected");
+        if (selected[task].length === 0) {{
+            delete selected[task];
+        }}
+    }}
+
+    normalizeSelected();
+    saveSelected();
+}}
+
+function getCellFromPoint(x, y) {{
+    const el = document.elementFromPoint(x, y);
+    if (!el) return null;
+    if (el.classList.contains("cell")) return el;
+    return el.closest(".cell");
+}}
+
+function cellKey(cell) {{
+    if (!cell) return "";
+    return `${{cell.dataset.task}}__${{cell.dataset.time}}`;
+}}
+
+function buildGrid() {{
+    grid.innerHTML = "";
+
+    const corner = document.createElement("div");
+    corner.className = "corner";
+    corner.textContent = "業務種別";
+    grid.appendChild(corner);
+
+    timeSlots.forEach((time, i) => {{
+        const header = document.createElement("div");
+        header.className = "time-header";
+        header.textContent = i % 4 === 0 ? time.substring(0, 2) + "時" : time.substring(3, 5);
+        grid.appendChild(header);
+    }});
+
+    tasks.forEach(task => {{
+        const name = document.createElement("div");
+        name.className = "task-name";
+        name.textContent = task;
+        name.dataset.task = task;
+        name.dataset.detail = taskDetails[task] || "説明は登録されていません。";
+        name.addEventListener("click", () => openModal(name.dataset.task, name.dataset.detail));
+        grid.appendChild(name);
+
+        timeSlots.forEach((time, i) => {{
+            const cell = document.createElement("div");
+            cell.className = "cell";
+            if (i % 4 === 0) cell.classList.add("hour-start");
+            cell.dataset.task = task;
+            cell.dataset.time = time;
+
+            if (isSelected(task, time)) {{
+                cell.classList.add("selected");
+            }}
+
+            cell.addEventListener("pointerdown", onPointerDown);
+            cell.addEventListener("pointerenter", onPointerEnter);
+            cell.addEventListener("pointermove", onPointerMove);
+            cell.addEventListener("click", onCellClick);
+
+            grid.appendChild(cell);
+        }});
+    }});
+
+    updateStatus();
+}}
+
+function onPointerDown(e) {{
+    const cell = e.currentTarget;
+    isPointerDown = true;
+    didMove = false;
+    activePointerId = e.pointerId;
+    lastCellKey = cellKey(cell);
+    dragMode = !cell.classList.contains("selected");
+
+    cell.setPointerCapture(activePointerId);
+    setCell(cell, dragMode);
+    e.preventDefault();
+}}
+
+function onPointerEnter(e) {{
+    if (!isPointerDown) return;
+
+    const cell = e.currentTarget;
+    const key = cellKey(cell);
+
+    if (key !== lastCellKey) {{
+        didMove = true;
+        lastCellKey = key;
+        setCell(cell, dragMode);
+    }}
+}}
+
+function onPointerMove(e) {{
+    if (!isPointerDown) return;
+
+    const cell = getCellFromPoint(e.clientX, e.clientY);
+    const key = cellKey(cell);
+
+    if (cell && key !== lastCellKey) {{
+        didMove = true;
+        lastCellKey = key;
+        setCell(cell, dragMode);
+    }}
+
+    e.preventDefault();
+}}
+
+function onCellClick(e) {{
+    if (didMove) {{
+        e.preventDefault();
+        e.stopPropagation();
+    }}
+}}
+
+document.addEventListener("pointerup", () => {{
+    isPointerDown = false;
+    activePointerId = null;
+    lastCellKey = null;
+    setTimeout(() => {{ didMove = false; }}, 60);
+}});
+
+document.addEventListener("pointercancel", () => {{
+    isPointerDown = false;
+    activePointerId = null;
+    lastCellKey = null;
+    didMove = false;
+}});
+
+function openModal(task, detail) {{
+    document.getElementById("modalTitle").textContent = task;
+    document.getElementById("modalBody").textContent = detail;
+    document.getElementById("modal").style.display = "block";
+    document.getElementById("modalBackdrop").style.display = "block";
+}}
+
+function closeModal() {{
+    document.getElementById("modal").style.display = "none";
+    document.getElementById("modalBackdrop").style.display = "none";
+}}
+
+document.getElementById("modalClose").addEventListener("click", closeModal);
+document.getElementById("modalBackdrop").addEventListener("click", closeModal);
+
+document.getElementById("reflectBtn").addEventListener("click", () => {{
+    localStorage.setItem(storageKey + "_action", "reflect");
+    localStorage.setItem(storageKey, JSON.stringify(selected));
+    window.parent.location.reload();
+}});
+
+document.getElementById("submitBtn").addEventListener("click", () => {{
+    localStorage.setItem(storageKey + "_action", "submit");
+    localStorage.setItem(storageKey, JSON.stringify(selected));
+    window.parent.location.reload();
+}});
+
+buildGrid();
+</script>
+
+</body>
+</html>
+"""
 
 components.html(
-    """
-    <script>
-    (function() {
-        let isSyncing = false;
-        let lastKnownScrollLeft = 0;
-        let attachedEditor = null;
-        let attachedTaskPanel = null;
-
-        function getDoc() {
-            return window.parent.document;
-        }
-
-        function findTaskPanel() {
-            return getDoc().querySelector('#task-panel');
-        }
-
-        function isScrollableY(el) {
-            if (!el) return false;
-            const style = window.parent.getComputedStyle(el);
-            return (
-                (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
-                el.scrollHeight > el.clientHeight + 20
-            );
-        }
-
-        function isScrollableX(el) {
-            if (!el) return false;
-            const style = window.parent.getComputedStyle(el);
-            return (
-                (style.overflowX === 'auto' || style.overflowX === 'scroll') &&
-                el.scrollWidth > el.clientWidth + 20
-            );
-        }
-
-        function findEditorScrollElement() {
-            const doc = getDoc();
-            const frames = Array.from(doc.querySelectorAll('div[data-testid="stDataFrame"]'));
-
-            let best = null;
-            let bestScore = 0;
-
-            for (const frame of frames) {
-                const descendants = Array.from(frame.querySelectorAll('*'));
-
-                for (const el of descendants) {
-                    const hasY = isScrollableY(el);
-                    const hasX = isScrollableX(el);
-
-                    if (!hasY && !hasX) continue;
-
-                    const score =
-                        (hasY ? 1000 : 0) +
-                        (hasX ? 500 : 0) +
-                        el.scrollHeight +
-                        el.scrollWidth;
-
-                    if (score > bestScore) {
-                        best = el;
-                        bestScore = score;
-                    }
-                }
-            }
-
-            return best;
-        }
-
-        function syncVertical(source, target) {
-            if (!source || !target) return;
-            if (isSyncing) return;
-
-            isSyncing = true;
-
-            const preservedLeft = attachedEditor ? attachedEditor.scrollLeft : lastKnownScrollLeft;
-            target.scrollTop = source.scrollTop;
-
-            if (attachedEditor) {
-                attachedEditor.scrollLeft = preservedLeft;
-                lastKnownScrollLeft = preservedLeft;
-            }
-
-            window.setTimeout(function() {
-                isSyncing = false;
-            }, 30);
-        }
-
-        function attachSync() {
-            const taskPanel = findTaskPanel();
-            const editorScroll = findEditorScrollElement();
-
-            if (!taskPanel || !editorScroll) {
-                window.setTimeout(attachSync, 500);
-                return;
-            }
-
-            if (attachedEditor === editorScroll && attachedTaskPanel === taskPanel) {
-                return;
-            }
-
-            attachedEditor = editorScroll;
-            attachedTaskPanel = taskPanel;
-            lastKnownScrollLeft = editorScroll.scrollLeft || 0;
-
-            editorScroll.addEventListener('scroll', function() {
-                const currentLeft = editorScroll.scrollLeft;
-
-                if (currentLeft !== lastKnownScrollLeft) {
-                    lastKnownScrollLeft = currentLeft;
-                }
-
-                syncVertical(editorScroll, taskPanel);
-
-                if (editorScroll.scrollLeft !== lastKnownScrollLeft) {
-                    editorScroll.scrollLeft = lastKnownScrollLeft;
-                }
-            }, { passive: true });
-
-            taskPanel.addEventListener('scroll', function() {
-                syncVertical(taskPanel, editorScroll);
-
-                if (attachedEditor) {
-                    attachedEditor.scrollLeft = lastKnownScrollLeft;
-                }
-            }, { passive: true });
-        }
-
-        function attachTaskModal() {
-            const doc = getDoc();
-            const rows = Array.from(doc.querySelectorAll('.task-row'));
-            const modal = doc.querySelector('#task-modal');
-            const backdrop = doc.querySelector('#task-modal-backdrop');
-            const title = doc.querySelector('#task-modal-title');
-            const body = doc.querySelector('#task-modal-body');
-            const close = doc.querySelector('#task-modal-close');
-
-            if (!rows.length || !modal || !backdrop || !title || !body || !close) {
-                window.setTimeout(attachTaskModal, 500);
-                return;
-            }
-
-            function openModal(task, detail) {
-                title.textContent = task;
-                body.textContent = detail || '説明は登録されていません。';
-                modal.style.display = 'block';
-                backdrop.style.display = 'block';
-            }
-
-            function closeModal() {
-                modal.style.display = 'none';
-                backdrop.style.display = 'none';
-            }
-
-            rows.forEach(function(row) {
-                if (row.dataset.modalAttached === "1") return;
-                row.dataset.modalAttached = "1";
-
-                row.addEventListener('click', function() {
-                    openModal(row.dataset.task, row.dataset.detail);
-                });
-            });
-
-            close.addEventListener('click', closeModal);
-            backdrop.addEventListener('click', closeModal);
-        }
-
-        function makeCheckboxCellsEasierToTap() {
-            const doc = getDoc();
-            const cells = Array.from(doc.querySelectorAll('div[data-testid="stDataFrame"] div[role="gridcell"]'));
-
-            cells.forEach(function(cell) {
-                if (cell.dataset.tapAttached === "1") return;
-                const checkbox = cell.querySelector('input[type="checkbox"]');
-
-                if (!checkbox) return;
-
-                cell.dataset.tapAttached = "1";
-                cell.style.cursor = "pointer";
-
-                cell.addEventListener('click', function(e) {
-                    if (e.target === checkbox) return;
-                    checkbox.click();
-                });
-            });
-        }
-
-        function watchDomChanges() {
-            const doc = getDoc();
-
-            const observer = new MutationObserver(function() {
-                window.setTimeout(attachSync, 300);
-                window.setTimeout(attachTaskModal, 300);
-                window.setTimeout(makeCheckboxCellsEasierToTap, 300);
-            });
-
-            observer.observe(doc.body, {
-                childList: true,
-                subtree: true
-            });
-        }
-
-        window.setTimeout(attachSync, 800);
-        window.setTimeout(attachSync, 1500);
-        window.setTimeout(attachTaskModal, 800);
-        window.setTimeout(attachTaskModal, 1500);
-        window.setTimeout(makeCheckboxCellsEasierToTap, 800);
-        window.setTimeout(makeCheckboxCellsEasierToTap, 1500);
-        watchDomChanges();
-    })();
-    </script>
-    """,
-    height=0,
+    html_code,
+    height=EDITOR_HEIGHT + 120,
+    scrolling=False
 )
 
-if reflect_clicked or submit_clicked:
-    st.session_state["editor_df"] = edited_df.copy()
-    st.session_state["timeline_data"] = grid_to_timeline(edited_df)
+action = streamlit_js_eval(
+    js_expressions=f"localStorage.getItem('{storage_key}_action')",
+    key="get_action"
+)
+
+stored_json = streamlit_js_eval(
+    js_expressions=f"localStorage.getItem('{storage_key}')",
+    key="get_timeline_json"
+)
+
+if stored_json:
+    try:
+        st.session_state["timeline_data"] = normalize_timeline(json.loads(stored_json))
+    except Exception:
+        pass
 
 records = build_records(
     st.session_state.get("timeline_data", {}),
@@ -717,16 +781,22 @@ records = build_records(
     selected_date
 )
 
-if reflect_clicked:
+if action in ["reflect", "submit"]:
+    streamlit_js_eval(
+        js_expressions=f"localStorage.removeItem('{storage_key}_action')",
+        key="clear_action"
+    )
+
+if action == "reflect":
     if records:
         st.success(
             f"入力内容を反映しました。現在 {len(records)} 件、合計 {len(records) * 15} 分です。"
             "参考内容はページ最下部に表示しています。"
         )
     else:
-        st.warning("入力内容がありません。チェックを入れてから反映してください。")
+        st.warning("入力内容がありません。セルをタップまたはなぞってから反映してください。")
 
-if submit_clicked:
+if action == "submit":
     if not ward_name:
         st.warning("病棟名称を入力してください。")
         st.stop()
@@ -736,7 +806,7 @@ if submit_clicked:
         st.stop()
 
     if not records:
-        st.warning("入力データがありません。チェックを入れてから提出してください。")
+        st.warning("入力データがありません。セルをタップまたはなぞってから提出してください。")
         st.stop()
 
     df_daily = pd.DataFrame(records)
@@ -746,6 +816,7 @@ if submit_clicked:
 
         if result.get("status") == "success":
             delete_draft()
+
             sent_count = result.get("count", len(records))
 
             st.balloons()
@@ -761,9 +832,7 @@ if submit_clicked:
         st.exception(e)
 
 if save_clicked:
-    st.session_state["timeline_data"] = grid_to_timeline(st.session_state.get("editor_df", create_empty_grid()))
     save_draft()
-
     st.success(f"途中保存しました。現在 {len(records)} 件、合計 {len(records) * 15} 分です。")
 
 st.divider()
