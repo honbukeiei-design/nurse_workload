@@ -18,7 +18,6 @@ if "authenticated" not in st.session_state:
 
 if not st.session_state["authenticated"]:
     st.title("看護業務 記録アプリ")
-
     password = st.text_input("パスワードを入力してください", type="password")
 
     if st.button("ログイン"):
@@ -70,10 +69,7 @@ def send_to_google_sheet(records):
     try:
         return response.json()
     except Exception:
-        return {
-            "status": "unknown",
-            "message": response.text
-        }
+        return {"status": "unknown", "message": response.text}
 
 
 def next_time_label(start):
@@ -94,7 +90,7 @@ def create_empty_grid():
     rows = []
 
     for task in TASK_TYPES:
-        row = {"業務種別": task}
+        row = {}
         for t in TIME_SLOTS:
             row[t] = False
         rows.append(row)
@@ -109,11 +105,7 @@ def timeline_to_grid(timeline_data):
         if task not in TASK_TYPES:
             continue
 
-        idx_list = df.index[df["業務種別"] == task].tolist()
-        if not idx_list:
-            continue
-
-        idx = idx_list[0]
+        idx = TASK_TYPES.index(task)
 
         for t in times:
             if t in TIME_SLOTS:
@@ -125,8 +117,8 @@ def timeline_to_grid(timeline_data):
 def grid_to_timeline(df):
     timeline = {}
 
-    for _, row in df.iterrows():
-        task = row["業務種別"]
+    for idx, row in df.iterrows():
+        task = TASK_TYPES[idx]
         selected_times = []
 
         for t in TIME_SLOTS:
@@ -194,6 +186,7 @@ if "editor_df" not in st.session_state:
         st.session_state["timeline_data"]
     )
 
+
 st.title("看護業務 記録アプリ")
 
 col_a, col_b, col_c = st.columns(3)
@@ -211,24 +204,22 @@ with col_b:
     )
 
 with col_c:
-    selected_date = st.date_input(
-        "日付",
-        value=date.today()
-    )
+    selected_date = st.date_input("日付", value=date.today())
 
 st.session_state["ward_name"] = ward_name
 st.session_state["nurse_id"] = nurse_id
 
 st.info(
-    "横スクロールしても業務種別を表示し、縦スクロールしてもタイムラインを表示し続けます。"
+    "左側に業務種別を固定表示し、右側のタイムラインだけを横スクロールして入力します。"
 )
 
 st.markdown(
     """
     <style>
-    /*
-    画面上部の操作ボタン固定
-    */
+    section.main > div {
+        max-width: 100%;
+    }
+
     div[data-testid="stHorizontalBlock"] {
         position: sticky;
         top: 0;
@@ -238,91 +229,100 @@ st.markdown(
         border-bottom: 1px solid #ddd;
     }
 
-    /*
-    data_editor全体
-    */
+    .task-panel {
+        height: 620px;
+        overflow: hidden;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        background: #f7f7f7;
+    }
+
+    .task-header {
+        height: 38px;
+        line-height: 38px;
+        padding-left: 10px;
+        font-weight: 700;
+        background: #e8e8e8;
+        border-bottom: 1px solid #ccc;
+        position: sticky;
+        top: 0;
+        z-index: 20;
+    }
+
+    .task-row {
+        height: 35px;
+        line-height: 35px;
+        padding-left: 10px;
+        border-bottom: 1px solid #e1e1e1;
+        font-size: 14px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
     div[data-testid="stDataFrame"] {
+        height: 620px !important;
         border: 1px solid #ddd;
         border-radius: 8px;
         overflow: hidden;
     }
 
-    /*
-    タイムラインのヘッダー行を上固定
-    */
     div[data-testid="stDataFrame"] div[role="columnheader"] {
         position: sticky !important;
         top: 0 !important;
-        z-index: 30 !important;
+        z-index: 50 !important;
         background: #eeeeee !important;
         font-size: 12px !important;
         font-weight: 700 !important;
         border-bottom: 2px solid #aaa !important;
     }
 
-    /*
-    業務種別列を左固定
-    Streamlitの内部構造上、環境により nth-child の位置がずれる場合があります。
-    hide_index=True の場合、多くの環境では nth-child(1) が業務種別列です。
-    */
-    div[data-testid="stDataFrame"] div[role="gridcell"]:nth-child(1),
-    div[data-testid="stDataFrame"] div[role="columnheader"]:nth-child(1) {
-        position: sticky !important;
-        left: 0 !important;
-        z-index: 50 !important;
-        background: #f7f7f7 !important;
-        font-weight: 700 !important;
-        min-width: 180px !important;
-        max-width: 180px !important;
-        box-shadow: 3px 0 5px rgba(0,0,0,0.16);
-    }
-
-    /*
-    左上セルは最前面
-    */
-    div[data-testid="stDataFrame"] div[role="columnheader"]:nth-child(1) {
-        z-index: 80 !important;
-        background: #e6e6e6 !important;
-    }
-
-    /*
-    チェックセルを大きくする
-    */
     div[data-testid="stDataFrame"] div[role="gridcell"] {
         padding: 0 !important;
         min-width: 48px !important;
-        min-height: 42px !important;
+        min-height: 35px !important;
     }
 
-    /*
-    チェックボックス拡大
-    */
+    div[data-testid="stDataFrame"] div[role="row"] {
+        min-height: 35px !important;
+    }
+
     div[data-testid="stDataFrame"] input[type="checkbox"] {
-        width: 30px !important;
-        height: 30px !important;
+        width: 28px !important;
+        height: 28px !important;
         transform: scale(1.35);
         cursor: pointer;
         accent-color: #1e88e5;
     }
 
-    /*
-    タップ領域をセル全体に近づける
-    */
     div[data-testid="stDataFrame"] label {
         width: 100% !important;
         height: 100% !important;
-        min-height: 42px !important;
+        min-height: 35px !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
         cursor: pointer !important;
     }
 
-    /*
-    行高を広めにする
-    */
-    div[data-testid="stDataFrame"] div[role="row"] {
-        min-height: 42px !important;
+    @media screen and (max-width: 900px) {
+        .task-row {
+            font-size: 12px;
+            height: 35px;
+            line-height: 35px;
+        }
+
+        .task-header {
+            font-size: 13px;
+        }
+
+        div[data-testid="stDataFrame"] {
+            height: 560px !important;
+        }
+
+        .task-panel {
+            height: 560px;
+        }
     }
     </style>
     """,
@@ -364,13 +364,7 @@ if delete_clicked:
     st.success("途中保存を削除しました。")
     st.rerun()
 
-column_config = {
-    "業務種別": st.column_config.TextColumn(
-        "業務種別",
-        width="medium",
-        disabled=True
-    )
-}
+column_config = {}
 
 for t in TIME_SLOTS:
     label = t if t.endswith(":00") else t[-2:]
@@ -380,25 +374,40 @@ for t in TIME_SLOTS:
         help=t
     )
 
-with st.form("timeline_input_form", clear_on_submit=False):
+left_col, right_col = st.columns([1.35, 8.65], gap="small")
 
-    edited_df = st.data_editor(
-        st.session_state["editor_df"],
-        hide_index=True,
-        use_container_width=True,
-        height=720,
-        disabled=["業務種別"],
-        column_order=["業務種別"] + TIME_SLOTS,
-        column_config=column_config,
-        key="timeline_editor",
-        num_rows="fixed"
-    )
+with left_col:
+    task_html = """
+    <div class="task-panel">
+        <div class="task-header">業務種別</div>
+    """
 
-    reflect_clicked = st.form_submit_button(
-        "入力内容を反映",
-        type="primary",
-        use_container_width=True
-    )
+    for task in TASK_TYPES:
+        task_html += f'<div class="task-row">{task}</div>'
+
+    task_html += "</div>"
+
+    st.markdown(task_html, unsafe_allow_html=True)
+
+with right_col:
+    with st.form("timeline_input_form", clear_on_submit=False):
+
+        edited_df = st.data_editor(
+            st.session_state["editor_df"],
+            hide_index=True,
+            use_container_width=True,
+            height=620,
+            column_order=TIME_SLOTS,
+            column_config=column_config,
+            key="timeline_editor",
+            num_rows="fixed"
+        )
+
+        reflect_clicked = st.form_submit_button(
+            "入力内容を反映",
+            type="primary",
+            use_container_width=True
+        )
 
 if reflect_clicked:
     st.session_state["editor_df"] = edited_df.copy()
@@ -419,9 +428,6 @@ if reflect_clicked:
         st.warning("入力内容がありません。チェックを入れてから反映してください。")
 
 if save_clicked:
-    st.session_state["timeline_data"] = grid_to_timeline(
-        st.session_state.get("editor_df", create_empty_grid())
-    )
     save_draft()
 
     records = build_records(
@@ -445,16 +451,10 @@ records = build_records(
 st.subheader("入力状況")
 
 if records:
-    st.success(
-        f"現在の入力：{len(records)} 件、合計 {len(records) * 15} 分"
-    )
+    st.success(f"現在の入力：{len(records)} 件、合計 {len(records) * 15} 分")
 
     df_preview = pd.DataFrame(records)
-
-    st.dataframe(
-        df_preview,
-        use_container_width=True
-    )
+    st.dataframe(df_preview, use_container_width=True)
 
     summary = (
         df_preview
@@ -467,9 +467,7 @@ if records:
     st.dataframe(summary, use_container_width=True)
 
 else:
-    st.warning(
-        "まだ反映済みの入力がありません。チェック後に「入力内容を反映」を押してください。"
-    )
+    st.warning("まだ反映済みの入力がありません。チェック後に「入力内容を反映」を押してください。")
 
 st.divider()
 
@@ -496,9 +494,7 @@ if submit_clicked:
         st.stop()
 
     if not records:
-        st.warning(
-            "入力データがありません。チェック後に「入力内容を反映」を押してから提出してください。"
-        )
+        st.warning("入力データがありません。チェック後に「入力内容を反映」を押してから提出してください。")
         st.stop()
 
     df_daily = pd.DataFrame(records)
