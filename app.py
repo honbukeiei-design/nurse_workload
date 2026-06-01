@@ -5,6 +5,7 @@ from pathlib import Path
 import json
 import requests
 import streamlit.components.v1 as components
+from streamlit_js_eval import streamlit_js_eval
 
 st.set_page_config(
     page_title="看護業務 記録アプリ",
@@ -14,9 +15,6 @@ st.set_page_config(
 APP_PASSWORD = st.secrets["APP_PASSWORD"]
 APPS_SCRIPT_URL = st.secrets["APPS_SCRIPT_URL"]
 
-# -----------------------------
-# 認証
-# -----------------------------
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
@@ -39,78 +37,28 @@ SAVE_DIR.mkdir(parents=True, exist_ok=True)
 DRAFT_FILE = SAVE_DIR / "nurse_draft.json"
 
 TASK_TYPES = [
-    "食事",
-    "排泄",
-    "清潔",
-    "安全",
-    "安楽",
-    "入院環境の整備",
-    "自立の援助",
-    "患者の移送・移動",
-    "患者及び家族との連絡相談",
-    "終末看護処置",
-    "準備・後片付け",
-    "入院当日に関わる業務",
-    "退院準備に関わるもの",
-    "指示受け・報告",
-    "測定",
-    "呼吸・循環管理",
-    "治療・診察の介助",
-    "諸検査の介助及び検体採取",
-    "与薬（注射）",
-    "与薬（注射を除く）",
-    "看護計画・記録",
-    "その他の記録",
-    "看護師間の報告・引継ぎ",
-    "病棟管理に関する記録作成",
-    "薬剤業務・薬品管理",
-    "滅菌物・消耗品の管理",
-    "機器・機材の管理",
-    "病室以外の環境整備",
-    "病棟外の連絡",
-    "事務業務",
-    "物品搬送業務",
-    "職員の勤務及び調整",
-    "看護学生・職員の指導",
-    "教育・研修参加",
-    "会議",
-    "職員の健康管理",
-    "助産師業務",
-    "その他",
+    "食事", "排泄", "清潔", "安全", "安楽",
+    "入院環境の整備", "自立の援助", "患者の移送・移動",
+    "患者及び家族との連絡相談", "終末看護処置",
+    "準備・後片付け", "入院当日に関わる業務",
+    "退院準備に関わるもの", "指示受け・報告", "測定",
+    "呼吸・循環管理", "治療・診察の介助",
+    "諸検査の介助及び検体採取", "与薬（注射）",
+    "与薬（注射を除く）", "看護計画・記録",
+    "その他の記録", "看護師間の報告・引継ぎ",
+    "病棟管理に関する記録作成", "薬剤業務・薬品管理",
+    "滅菌物・消耗品の管理", "機器・機材の管理",
+    "病室以外の環境整備", "病棟外の連絡", "事務業務",
+    "物品搬送業務", "職員の勤務及び調整",
+    "看護学生・職員の指導", "教育・研修参加",
+    "会議", "職員の健康管理", "助産師業務", "その他",
 ]
 
-TIME_SLOTS = []
-for hour in range(24):
-    for minute in [0, 15, 30, 45]:
-        TIME_SLOTS.append(f"{hour:02d}:{minute:02d}")
-
-# -----------------------------
-# 下書き
-# -----------------------------
-def save_draft():
-    draft = {
-        "ward_name": st.session_state.get("ward_name", ""),
-        "nurse_id": st.session_state.get("nurse_id", ""),
-        "timeline_data": st.session_state.get("timeline_data", {}),
-    }
-
-    with open(DRAFT_FILE, "w", encoding="utf-8") as f:
-        json.dump(draft, f, ensure_ascii=False)
-
-
-def load_draft():
-    if DRAFT_FILE.exists():
-        with open(DRAFT_FILE, "r", encoding="utf-8") as f:
-            draft = json.load(f)
-
-        for key, value in draft.items():
-            st.session_state[key] = value
-
-
-def delete_draft():
-    if DRAFT_FILE.exists():
-        DRAFT_FILE.unlink()
-
+TIME_SLOTS = [
+    f"{hour:02d}:{minute:02d}"
+    for hour in range(24)
+    for minute in [0, 15, 30, 45]
+]
 
 def send_to_google_sheet(records):
     response = requests.post(
@@ -128,6 +76,57 @@ def send_to_google_sheet(records):
             "message": response.text
         }
 
+def save_draft():
+    draft = {
+        "ward_name": st.session_state.get("ward_name", ""),
+        "nurse_id": st.session_state.get("nurse_id", ""),
+        "timeline_data": st.session_state.get("timeline_data", {}),
+    }
+
+    with open(DRAFT_FILE, "w", encoding="utf-8") as f:
+        json.dump(draft, f, ensure_ascii=False)
+
+def load_draft():
+    if DRAFT_FILE.exists():
+        with open(DRAFT_FILE, "r", encoding="utf-8") as f:
+            draft = json.load(f)
+
+        for key, value in draft.items():
+            st.session_state[key] = value
+
+def delete_draft():
+    if DRAFT_FILE.exists():
+        DRAFT_FILE.unlink()
+
+def next_time_label(start):
+    hour, minute = map(int, start.split(":"))
+    minute += 15
+
+    if minute == 60:
+        minute = 0
+        hour += 1
+
+    if hour >= 24:
+        return "24:00"
+
+    return f"{hour:02d}:{minute:02d}"
+
+def build_records(timeline_data, ward_name, nurse_id, selected_date):
+    records = []
+
+    for task, times in timeline_data.items():
+        for start_label in sorted(times):
+            records.append({
+                "病棟名称": ward_name,
+                "日付": selected_date.isoformat(),
+                "看護師ID": nurse_id,
+                "開始": start_label,
+                "終了": next_time_label(start_label),
+                "業務種別": task,
+                "この業務に割り当てた時間(分)": 15
+            })
+
+    return records
 
 if "draft_loaded" not in st.session_state:
     load_draft()
@@ -136,12 +135,9 @@ if "draft_loaded" not in st.session_state:
 if "timeline_data" not in st.session_state:
     st.session_state["timeline_data"] = {}
 
-# -----------------------------
-# 画面
-# -----------------------------
 st.title("看護業務 記録アプリ")
 
-col_a, col_b, col_c = st.columns([1, 1, 1])
+col_a, col_b, col_c = st.columns(3)
 
 with col_a:
     ward_name = st.text_input(
@@ -161,37 +157,105 @@ with col_c:
 st.session_state["ward_name"] = ward_name
 st.session_state["nurse_id"] = nurse_id
 
-st.info(
-    "業務行をマウスでドラッグ、またはスマホ・タブレットで指でなぞると15分単位で入力できます。"
+st.info("業務行をクリック、マウスでドラッグ、またはスマホ・タブレットで指でなぞって入力できます。")
+
+# ==================================================
+# 固定操作ボタン
+# ==================================================
+st.markdown(
+    """
+    <style>
+    div[data-testid="stHorizontalBlock"]:has(button) {
+        position: sticky;
+        top: 0;
+        background: white;
+        z-index: 999;
+        padding: 8px 0;
+        border-bottom: 1px solid #ddd;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
-    if st.button("途中保存"):
-        save_draft()
-        st.success("途中保存しました")
+    reflect_clicked = st.button("入力内容を反映", use_container_width=True)
 
 with col2:
-    if st.button("途中保存読込"):
-        load_draft()
-        st.success("途中保存を読み込みました")
-        st.rerun()
+    clear_clicked = st.button("全消去", use_container_width=True)
 
 with col3:
-    if st.button("途中保存削除"):
-        delete_draft()
+    save_clicked = st.button("途中保存", use_container_width=True)
+
+with col4:
+    load_clicked = st.button("途中保存読込", use_container_width=True)
+
+with col5:
+    delete_clicked = st.button("途中保存削除", use_container_width=True)
+
+storage_key = f"nursing_timeline_{selected_date.isoformat()}_{nurse_id or 'no_id'}"
+
+if clear_clicked:
+    st.session_state["timeline_data"] = {}
+    streamlit_js_eval(
+        js_expressions=f"localStorage.removeItem('{storage_key}');",
+        key="clear_storage"
+    )
+    st.success("入力内容を全消去しました")
+    st.rerun()
+
+if reflect_clicked:
+    stored_json = streamlit_js_eval(
+        js_expressions=f"localStorage.getItem('{storage_key}')",
+        key="get_timeline_data"
+    )
+
+    if stored_json:
+        try:
+            st.session_state["timeline_data"] = json.loads(stored_json)
+            st.success("入力内容を反映しました")
+        except Exception:
+            st.error("入力内容の読込に失敗しました")
+    else:
         st.session_state["timeline_data"] = {}
-        st.success("途中保存を削除しました")
-        st.rerun()
+        st.warning("反映できる入力内容がありません")
+
+if save_clicked:
+    stored_json = streamlit_js_eval(
+        js_expressions=f"localStorage.getItem('{storage_key}')",
+        key="get_timeline_for_save"
+    )
+
+    if stored_json:
+        st.session_state["timeline_data"] = json.loads(stored_json)
+
+    save_draft()
+    st.success("途中保存しました")
+
+if load_clicked:
+    load_draft()
+    st.success("途中保存を読み込みました")
+    st.rerun()
+
+if delete_clicked:
+    delete_draft()
+    st.session_state["timeline_data"] = {}
+    streamlit_js_eval(
+        js_expressions=f"localStorage.removeItem('{storage_key}');",
+        key="delete_storage"
+    )
+    st.success("途中保存を削除しました")
+    st.rerun()
 
 st.divider()
 
-# -----------------------------
-# タイムラインUI
-# -----------------------------
 initial_data = st.session_state.get("timeline_data", {})
 
+# ==================================================
+# タイムラインUI
+# ==================================================
 html = f"""
 <!DOCTYPE html>
 <html>
@@ -211,7 +275,7 @@ body {{
 
 .grid {{
     display: grid;
-    grid-template-columns: 180px repeat(96, 24px);
+    grid-template-columns: 190px repeat(96, 26px);
     user-select: none;
     touch-action: none;
     font-size: 12px;
@@ -220,7 +284,7 @@ body {{
 .cell, .task, .time {{
     border-right: 1px solid #ddd;
     border-bottom: 1px solid #ddd;
-    height: 28px;
+    height: 30px;
     box-sizing: border-box;
 }}
 
@@ -238,7 +302,7 @@ body {{
     background: #f0f0f0;
     text-align: center;
     font-size: 10px;
-    line-height: 28px;
+    line-height: 30px;
     position: sticky;
     top: 0;
     z-index: 2;
@@ -251,8 +315,6 @@ body {{
     z-index: 4;
     background: #e8e8e8;
     font-weight: bold;
-    text-align: center;
-    line-height: 28px;
 }}
 
 .cell {{
@@ -267,25 +329,18 @@ body {{
     outline: 2px solid #333;
 }}
 
-.controls {{
-    margin: 12px 0;
-}}
-
-button {{
-    padding: 8px 12px;
-    margin-right: 8px;
-    border: 1px solid #aaa;
-    background: #fff;
-    border-radius: 6px;
+.notice {{
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: #555;
 }}
 </style>
 </head>
 
 <body>
 
-<div class="controls">
-    <button onclick="clearAll()">全消去</button>
-    <button onclick="sendData()">入力内容を反映</button>
+<div class="notice">
+入力すると自動的にブラウザへ一時保存されます。上部の「入力内容を反映」を押すと提出データに反映されます。
 </div>
 
 <div class="wrapper">
@@ -295,12 +350,27 @@ button {{
 <script>
 const tasks = {json.dumps(TASK_TYPES, ensure_ascii=False)};
 const timeSlots = {json.dumps(TIME_SLOTS, ensure_ascii=False)};
+const storageKey = "{storage_key}";
+
 let selected = {json.dumps(initial_data, ensure_ascii=False)};
+
+const stored = localStorage.getItem(storageKey);
+if (stored) {{
+    try {{
+        selected = JSON.parse(stored);
+    }} catch(e) {{}}
+}} else {{
+    localStorage.setItem(storageKey, JSON.stringify(selected));
+}}
 
 let isDragging = false;
 let dragMode = true;
 
 const grid = document.getElementById("grid");
+
+function saveToStorage() {{
+    localStorage.setItem(storageKey, JSON.stringify(selected));
+}}
 
 function buildGrid() {{
     grid.innerHTML = "";
@@ -316,20 +386,18 @@ function buildGrid() {{
 
         if (i % 4 === 0) {{
             div.innerText = t.substring(0, 2) + "時";
-        }} else {{
-            div.innerText = "";
         }}
 
         grid.appendChild(div);
     }});
 
-    tasks.forEach((task, row) => {{
+    tasks.forEach((task) => {{
         const taskDiv = document.createElement("div");
         taskDiv.className = "task";
         taskDiv.innerText = task;
         grid.appendChild(taskDiv);
 
-        timeSlots.forEach((time, col) => {{
+        timeSlots.forEach((time) => {{
             const cell = document.createElement("div");
             cell.className = "cell";
             cell.dataset.task = task;
@@ -368,7 +436,13 @@ function toggleCell(cell, mode) {{
     }} else {{
         selected[task] = selected[task].filter(t => t !== time);
         cell.classList.remove("selected");
+
+        if (selected[task].length === 0) {{
+            delete selected[task];
+        }}
     }}
+
+    saveToStorage();
 }}
 
 function startDrag(e) {{
@@ -379,6 +453,7 @@ function startDrag(e) {{
 
 function dragOver(e) {{
     if (!isDragging) return;
+    if (!e.target.classList.contains("cell")) return;
     toggleCell(e.target, dragMode);
 }}
 
@@ -411,21 +486,6 @@ function touchMove(e) {{
     }}
 }}
 
-function clearAll() {{
-    selected = {{}};
-    document.querySelectorAll(".cell").forEach(c => c.classList.remove("selected"));
-}}
-
-function sendData() {{
-    const text = JSON.stringify(selected);
-    const textarea = window.parent.document.querySelector('textarea[aria-label="timeline_json"]');
-
-    if (textarea) {{
-        textarea.value = text;
-        textarea.dispatchEvent(new Event("input", {{ bubbles: true }}));
-    }}
-}}
-
 document.addEventListener("mouseup", endDrag);
 buildGrid();
 </script>
@@ -436,58 +496,12 @@ buildGrid();
 
 components.html(html, height=950, scrolling=True)
 
-timeline_json = st.text_area(
-    "timeline_json",
-    value=json.dumps(st.session_state.get("timeline_data", {}), ensure_ascii=False),
-    height=1,
-    label_visibility="collapsed"
+records = build_records(
+    st.session_state.get("timeline_data", {}),
+    ward_name,
+    nurse_id,
+    selected_date
 )
-
-try:
-    st.session_state["timeline_data"] = json.loads(timeline_json)
-except Exception:
-    pass
-
-st.caption("入力後は「入力内容を反映」を押してください。その後、途中保存または提出できます。")
-
-st.divider()
-
-# -----------------------------
-# 提出用データ作成
-# -----------------------------
-def next_time_label(start):
-    hour, minute = map(int, start.split(":"))
-    minute += 15
-
-    if minute == 60:
-        minute = 0
-        hour += 1
-
-    if hour >= 24:
-        return "24:00"
-
-    return f"{hour:02d}:{minute:02d}"
-
-
-def build_records(timeline_data):
-    records = []
-
-    for task, times in timeline_data.items():
-        for start_label in sorted(times):
-            records.append({
-                "病棟名称": ward_name,
-                "日付": selected_date.isoformat(),
-                "看護師ID": nurse_id,
-                "開始": start_label,
-                "終了": next_time_label(start_label),
-                "業務種別": task,
-                "この業務に割り当てた時間(分)": 15
-            })
-
-    return records
-
-
-records = build_records(st.session_state["timeline_data"])
 
 if records:
     df_preview = pd.DataFrame(records)
@@ -496,7 +510,8 @@ if records:
     st.dataframe(df_preview, width="stretch")
 
     summary = (
-        df_preview.groupby("業務種別")["この業務に割り当てた時間(分)"]
+        df_preview
+        .groupby("業務種別")["この業務に割り当てた時間(分)"]
         .sum()
         .reset_index()
     )
@@ -504,10 +519,28 @@ if records:
     st.subheader("業務集計")
     st.dataframe(summary, width="stretch")
 
-# -----------------------------
-# 提出
-# -----------------------------
-if st.button("提出"):
+st.divider()
+
+if st.button("提出", type="primary"):
+    stored_json = streamlit_js_eval(
+        js_expressions=f"localStorage.getItem('{storage_key}')",
+        key="get_timeline_for_submit"
+    )
+
+    if stored_json:
+        try:
+            st.session_state["timeline_data"] = json.loads(stored_json)
+        except Exception:
+            st.error("入力内容の読込に失敗しました")
+            st.stop()
+
+    records = build_records(
+        st.session_state.get("timeline_data", {}),
+        ward_name,
+        nurse_id,
+        selected_date
+    )
+
     if not ward_name:
         st.warning("病棟名称を入力してください")
         st.stop()
