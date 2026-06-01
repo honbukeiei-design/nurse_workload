@@ -15,8 +15,8 @@ st.set_page_config(
 APP_PASSWORD = st.secrets["APP_PASSWORD"]
 APPS_SCRIPT_URL = st.secrets["APPS_SCRIPT_URL"]
 
-EDITOR_HEIGHT = 500
-ROW_HEIGHT = 35
+EDITOR_HEIGHT = 480
+ROW_HEIGHT = 44
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -58,42 +58,42 @@ TASK_TYPES = [
 
 TASK_DETAILS = {
     "食事": "食事介助、体位身支度を整える、経管栄養、摂取量観察、配膳・下膳・タイムアウト、哺乳・調乳",
-    "排泄": "排便・排尿介助（ポータブルトイレ、病室トイレ、車椅子トイレ等含む）、トイレ歩行介助、おむつ交換、嘔吐時の世話、ストーマケア、膀胱留置カテーテルの管理、浣腸、導尿、排尿ケアチームに関わるもの（尿測、残側、等）、その他のドレーン類の管理",
-    "清潔": "清拭（全身・部分・足浴）、更衣、陰部洗浄、洗髪・整髪、口腔ケア、髭剃り・爪切り、トロリーバス、シャワー浴、洗面介助、沐浴",
-    "安全": "転倒転落・危険行動の予防、不穏・徘徊患者の監視、病室巡視、感染の予防（院内感染防止）、防災",
-    "安楽": "体位変換、体位の工夫（ポジショニング等）、罨法（アイスノン・電気毛布等）、マッサージ、精神的安楽（患者を安心させるための会話、行為、睡眠への配慮）",
-    "入院環境の整備": "採光・照明・温度調節、騒音防止、ベッドサイド・病室内の環境整備、コロナ患者に関わる環境整備・室内清掃・ベッドメイキング、退院に関わる環境整備・ベッドメイキング、その他のベッドメイキング",
-    "自立の援助": "患者指導（食事指導、生活指導、手術の指導等）、リハビリ（発声・呼吸を含む）、在宅での介護方法指導、レクリエーション、オリエンテーション",
+    "排泄": "排便・排尿介助、トイレ歩行介助、おむつ交換、嘔吐時の世話、ストーマケア、膀胱留置カテーテルの管理、浣腸、導尿、排尿ケアチームに関わるもの、その他のドレーン類の管理",
+    "清潔": "清拭、更衣、陰部洗浄、洗髪・整髪、口腔ケア、髭剃り・爪切り、トロリーバス、シャワー浴、洗面介助、沐浴",
+    "安全": "転倒転落・危険行動の予防、不穏・徘徊患者の監視、病室巡視、感染の予防、防災",
+    "安楽": "体位変換、体位の工夫、罨法、マッサージ、精神的安楽",
+    "入院環境の整備": "採光・照明・温度調節、騒音防止、ベッドサイド・病室内の環境整備、コロナ患者に関わる環境整備、退院に関わる環境整備、その他のベッドメイキング",
+    "自立の援助": "患者指導、リハビリ、在宅での介護方法指導、レクリエーション、オリエンテーション",
     "患者の移送・移動": "他病棟への転棟、病棟内・病室内でのベッド移動、その他の病棟外への移動",
     "患者及び家族との連絡相談": "家族との連絡・相談・情報交換、患者との連絡・相談、IC立ち合い、ナースコール、患者の用事対応、介護認定調査立ち合い",
     "終末看護処置": "死後の処置、家族等への終末に関する連絡・各種手続きの説明、お見送り",
-    "準備・後片付け": "日常生活援助に必要な準備と後片付け（清拭前準備、清拭後の片付け、洗浄、吸引瓶の交換等）",
+    "準備・後片付け": "日常生活援助に必要な準備と後片付け",
     "入院当日に関わる業務": "書類準備、患者対応、家族対応、記録及び書類説明とサイン受理、その他入院に関わるもの",
-    "退院準備に関わるもの": "チェックリストに基づいた退院準備（当日・前日まで）。看護サマリ、患者指導は別項目",
+    "退院準備に関わるもの": "チェックリストに基づいた退院準備、看護サマリ・患者指導は別項目",
     "指示受け・報告": "指示受け、医師への確認、病状報告",
     "測定": "バイタルサイン、状態観察、身長、体重、胸囲・腹囲、BSチェック、尿検査、モニター類の観察、その他の測定",
-    "呼吸・循環管理": "レスピレーター操作、酸素テント・酸素吸入、排痰促進・喀痰吸引、超音波ネブライザー、Aラインの管理、肺・心音聴取、水分出納チェック、CVP、蘇生",
-    "治療・診察の介助": "回診の補助、包帯交換、ギプス、胸腔穿刺、腹腔穿刺、IVH等のカテーテル類の挿入及び除去、血液ガス、髄液検査、組織、その他の診療介助",
+    "呼吸・循環管理": "レスピレーター操作、酸素吸入、排痰促進・喀痰吸引、ネブライザー、Aライン管理、肺・心音聴取、水分出納チェック、CVP、蘇生",
+    "治療・診察の介助": "回診補助、包帯交換、ギプス、穿刺、カテーテル類の挿入・除去、血液ガス、髄液検査、組織、その他診療介助",
     "諸検査の介助及び検体採取": "血液、尿、便、痰、胃液、内視鏡・血管造影・カテーテル検査等、検体容器及び提出準備、結果整理",
-    "与薬（注射）": "ミキシング、皮下注射・筋肉注射の実施、静脈注射・点滴注射、輸血の準備と実施、注射指示受けと準備、IVH・持続点滴の管理、硬膜外からの薬剤管理",
+    "与薬（注射）": "ミキシング、皮下注射・筋肉注射、静脈注射・点滴注射、輸血、注射指示受け、IVH・持続点滴管理、硬膜外からの薬剤管理",
     "与薬（注射を除く）": "内服、経管より注入、軟膏塗布、坐薬、点眼・点耳・点鼻",
     "看護計画・記録": "看護サマリ、各種カンファレンス記録、患者メモ",
     "その他の記録": "その他の看護記録",
     "看護師間の報告・引継ぎ": "申し送り、看護師間の連絡、各種カンファレンス参加",
     "病棟管理に関する記録作成": "病棟管理日誌、業務分担表、その他の管理記録",
-    "薬剤業務・薬品管理": "薬剤の請求・受領・返納・管理、常備薬の請求・受領・返納・管理、麻薬・向精神薬等の請求・受領・返納・管理",
-    "滅菌物・消耗品の管理": "有効期限のチェック、滅菌物の依頼・受領・管理、消耗品の請求・受領・管理、検体容器の請求・受領",
-    "機器・機材の管理": "レスピレーター・ME機器等の管理、救急カート・回診車等の点検、清拭車の点検整備・おしぼりタオルの準備",
-    "病室以外の環境整備": "スタッフステーション・処置室、休憩室、洗浄室等病室以外の場所、営繕・修理依頼",
+    "薬剤業務・薬品管理": "薬剤の請求・受領・返納・管理、常備薬管理、麻薬・向精神薬等の管理",
+    "滅菌物・消耗品の管理": "有効期限チェック、滅菌物管理、消耗品管理、検体容器管理",
+    "機器・機材の管理": "レスピレーター・ME機器管理、救急カート・回診車点検、清拭車点検整備",
+    "病室以外の環境整備": "スタッフステーション、処置室、休憩室、洗浄室等、営繕・修理依頼",
     "病棟外の連絡": "病棟以外の部署への連絡",
-    "事務業務": "貸出簿の管理、カルテ管理、面会者の対応・荷物の受け渡し対応",
+    "事務業務": "貸出簿の管理、カルテ管理、面会者対応、荷物の受け渡し対応",
     "物品搬送業務": "あらゆる物品の搬送",
     "職員の勤務及び調整": "勤務表作成、勤務表修正、勤怠システム入力および確認",
-    "看護学生・職員の指導": "看護学生指導全般、面接、面接を受けていた、スタッフ指導、指導を受けていた",
+    "看護学生・職員の指導": "看護学生指導、面接、スタッフ指導、指導を受けていた",
     "教育・研修参加": "研修会参加",
-    "会議": "各種委員会、病棟会議・病棟内会議、チームラウンド",
-    "職員の健康管理": "休憩休息（食事を含む）、健康診断",
-    "助産師業務": "助産師外来で行う事項、分娩物品の準備・片付け、分娩室清掃、内診、分娩期における自立の援助、分娩直接介助、輪状マッサージ、双手圧迫、乳房マッサージ、妊婦・褥婦からの相談対応、腹部エコー、児預かり等",
+    "会議": "各種委員会、病棟会議、チームラウンド",
+    "職員の健康管理": "休憩休息、健康診断",
+    "助産師業務": "助産師外来で行う事項、分娩物品の準備・片付け、分娩室清掃、内診、分娩直接介助、乳房マッサージ、相談対応、腹部エコー、児預かり等",
     "その他": "情報収集、外来応援、その他全般",
 }
 
@@ -219,7 +219,7 @@ with col_c:
 st.session_state["ward_name"] = ward_name
 st.session_state["nurse_id"] = nurse_id
 
-st.info("業務種別をタップすると、具体的な業務内容を確認できます。")
+st.info("セル全体を押しやすくしています。入力後は「入力内容を反映」、その下の「提出」で送信します。")
 
 st.markdown(
     f"""
@@ -249,8 +249,8 @@ st.markdown(
     }}
 
     .task-header {{
-        height: 38px;
-        line-height: 38px;
+        height: 42px;
+        line-height: 42px;
         padding-left: 10px;
         font-weight: 700;
         background: #e8e8e8;
@@ -311,7 +311,6 @@ st.markdown(
     .task-modal-body {{
         line-height: 1.8;
         font-size: 15px;
-        white-space: normal;
     }}
 
     .task-modal-close {{
@@ -343,20 +342,12 @@ st.markdown(
 
     div[data-testid="stDataFrame"] div[role="gridcell"] {{
         padding: 0 !important;
-        min-width: 48px !important;
+        min-width: 58px !important;
         min-height: {ROW_HEIGHT}px !important;
     }}
 
     div[data-testid="stDataFrame"] div[role="row"] {{
         min-height: {ROW_HEIGHT}px !important;
-    }}
-
-    div[data-testid="stDataFrame"] input[type="checkbox"] {{
-        width: 28px !important;
-        height: 28px !important;
-        transform: scale(1.35);
-        cursor: pointer;
-        accent-color: #1e88e5;
     }}
 
     div[data-testid="stDataFrame"] label {{
@@ -367,6 +358,35 @@ st.markdown(
         align-items: center !important;
         justify-content: center !important;
         cursor: pointer !important;
+        padding: 0 !important;
+    }}
+
+    div[data-testid="stDataFrame"] input[type="checkbox"] {{
+        width: 38px !important;
+        height: 38px !important;
+        transform: scale(1.25);
+        cursor: pointer;
+        accent-color: #1e88e5;
+    }}
+
+    @media screen and (max-width: 900px) {{
+        section.main > div {{
+            padding-left: 0.4rem;
+            padding-right: 0.4rem;
+        }}
+
+        div[data-testid="stDataFrame"] div[role="gridcell"] {{
+            min-width: 64px !important;
+        }}
+
+        div[data-testid="stDataFrame"] input[type="checkbox"] {{
+            width: 42px !important;
+            height: 42px !important;
+        }}
+
+        .task-row {{
+            font-size: 12px;
+        }}
     }}
     </style>
     """,
@@ -407,9 +427,14 @@ if delete_clicked:
     st.rerun()
 
 column_config = {}
+
 for t in TIME_SLOTS:
     label = t if t.endswith(":00") else t[-2:]
-    column_config[t] = st.column_config.CheckboxColumn(label, width="small", help=t)
+    column_config[t] = st.column_config.CheckboxColumn(
+        label,
+        width="small",
+        help=t
+    )
 
 left_col, right_col = st.columns([1.3, 8.7], gap="small")
 
@@ -458,6 +483,12 @@ with right_col:
 
         reflect_clicked = st.form_submit_button(
             "入力内容を反映",
+            type="secondary",
+            use_container_width=True
+        )
+
+        submit_clicked = st.form_submit_button(
+            "提出",
             type="primary",
             use_container_width=True
         )
@@ -627,12 +658,33 @@ components.html(
             backdrop.addEventListener('click', closeModal);
         }
 
+        function makeCheckboxCellsEasierToTap() {
+            const doc = getDoc();
+            const cells = Array.from(doc.querySelectorAll('div[data-testid="stDataFrame"] div[role="gridcell"]'));
+
+            cells.forEach(function(cell) {
+                if (cell.dataset.tapAttached === "1") return;
+                const checkbox = cell.querySelector('input[type="checkbox"]');
+
+                if (!checkbox) return;
+
+                cell.dataset.tapAttached = "1";
+                cell.style.cursor = "pointer";
+
+                cell.addEventListener('click', function(e) {
+                    if (e.target === checkbox) return;
+                    checkbox.click();
+                });
+            });
+        }
+
         function watchDomChanges() {
             const doc = getDoc();
 
             const observer = new MutationObserver(function() {
                 window.setTimeout(attachSync, 300);
                 window.setTimeout(attachTaskModal, 300);
+                window.setTimeout(makeCheckboxCellsEasierToTap, 300);
             });
 
             observer.observe(doc.body, {
@@ -645,6 +697,8 @@ components.html(
         window.setTimeout(attachSync, 1500);
         window.setTimeout(attachTaskModal, 800);
         window.setTimeout(attachTaskModal, 1500);
+        window.setTimeout(makeCheckboxCellsEasierToTap, 800);
+        window.setTimeout(makeCheckboxCellsEasierToTap, 1500);
         watchDomChanges();
     })();
     </script>
@@ -652,31 +706,9 @@ components.html(
     height=0,
 )
 
-if reflect_clicked:
+if reflect_clicked or submit_clicked:
     st.session_state["editor_df"] = edited_df.copy()
     st.session_state["timeline_data"] = grid_to_timeline(edited_df)
-
-    records = build_records(
-        st.session_state["timeline_data"],
-        ward_name,
-        nurse_id,
-        selected_date
-    )
-
-    if records:
-        st.success(f"入力内容を反映しました。現在 {len(records)} 件、合計 {len(records) * 15} 分です。")
-    else:
-        st.warning("入力内容がありません。チェックを入れてから反映してください。")
-
-if save_clicked:
-    save_draft()
-    records = build_records(
-        st.session_state.get("timeline_data", {}),
-        ward_name,
-        nurse_id,
-        selected_date
-    )
-    st.success(f"途中保存しました。現在 {len(records)} 件、合計 {len(records) * 15} 分です。")
 
 records = build_records(
     st.session_state.get("timeline_data", {}),
@@ -685,41 +717,16 @@ records = build_records(
     selected_date
 )
 
-st.subheader("入力状況")
-
-if records:
-    st.success(f"現在の入力：{len(records)} 件、合計 {len(records) * 15} 分")
-    df_preview = pd.DataFrame(records)
-    st.dataframe(df_preview, use_container_width=True)
-
-    summary = (
-        df_preview
-        .groupby("業務種別")["この業務に割り当てた時間(分)"]
-        .sum()
-        .reset_index()
-    )
-
-    st.subheader("業務集計")
-    st.dataframe(summary, use_container_width=True)
-else:
-    st.warning("まだ反映済みの入力がありません。チェック後に「入力内容を反映」を押してください。")
-
-st.divider()
-
-submit_clicked = st.button(
-    "スプレッドシートへ提出",
-    type="primary",
-    use_container_width=True
-)
+if reflect_clicked:
+    if records:
+        st.success(
+            f"入力内容を反映しました。現在 {len(records)} 件、合計 {len(records) * 15} 分です。"
+            "参考内容はページ最下部に表示しています。"
+        )
+    else:
+        st.warning("入力内容がありません。チェックを入れてから反映してください。")
 
 if submit_clicked:
-    records = build_records(
-        st.session_state.get("timeline_data", {}),
-        ward_name,
-        nurse_id,
-        selected_date
-    )
-
     if not ward_name:
         st.warning("病棟名称を入力してください。")
         st.stop()
@@ -729,7 +736,7 @@ if submit_clicked:
         st.stop()
 
     if not records:
-        st.warning("入力データがありません。チェック後に「入力内容を反映」を押してから提出してください。")
+        st.warning("入力データがありません。チェックを入れてから提出してください。")
         st.stop()
 
     df_daily = pd.DataFrame(records)
@@ -745,9 +752,6 @@ if submit_clicked:
             st.success(f"スプレッドシートへ反映完了しました。送信件数：{sent_count} 件。")
             st.info(f"送信内容：{selected_date.isoformat()} / {ward_name} / {nurse_id}")
 
-            st.subheader("送信済みデータ")
-            st.dataframe(df_daily, use_container_width=True)
-
         else:
             st.error("Apps Script側から成功応答が返っていません。")
             st.write(result)
@@ -756,8 +760,33 @@ if submit_clicked:
         st.error("スプレッドシートへの送信に失敗しました。")
         st.exception(e)
 
+if save_clicked:
+    st.session_state["timeline_data"] = grid_to_timeline(st.session_state.get("editor_df", create_empty_grid()))
+    save_draft()
+
+    st.success(f"途中保存しました。現在 {len(records)} 件、合計 {len(records) * 15} 分です。")
+
+st.divider()
+st.subheader("参考：入力内容")
+
+if records:
+    st.success(f"現在の入力：{len(records)} 件、合計 {len(records) * 15} 分")
+
+    df_preview = pd.DataFrame(records)
+    st.dataframe(df_preview, use_container_width=True)
+
+    summary = (
+        df_preview
+        .groupby("業務種別")["この業務に割り当てた時間(分)"]
+        .sum()
+        .reset_index()
+    )
+
+    st.subheader("参考：業務集計")
+    st.dataframe(summary, use_container_width=True)
+
     csv_data = (
-        df_daily
+        df_preview
         .to_csv(index=False, encoding="utf-8-sig")
         .encode("utf-8-sig")
     )
@@ -768,3 +797,5 @@ if submit_clicked:
         file_name=f"nursing_{selected_date}_{ward_name}_{nurse_id}.csv",
         mime="text/csv"
     )
+else:
+    st.warning("まだ反映済みの入力がありません。")
