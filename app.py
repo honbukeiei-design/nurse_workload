@@ -14,7 +14,7 @@ st.set_page_config(
 APP_PASSWORD = st.secrets["APP_PASSWORD"]
 APPS_SCRIPT_URL = st.secrets["APPS_SCRIPT_URL"]
 
-EDITOR_HEIGHT = 520
+EDITOR_HEIGHT = 500
 ROW_HEIGHT = 35
 
 if "authenticated" not in st.session_state:
@@ -92,10 +92,13 @@ def next_time_label(start):
 
 def create_empty_grid():
     rows = []
+
     for _ in TASK_TYPES:
         row = {}
+
         for t in TIME_SLOTS:
             row[t] = False
+
         rows.append(row)
 
     return pd.DataFrame(rows)
@@ -212,7 +215,8 @@ st.session_state["ward_name"] = ward_name
 st.session_state["nurse_id"] = nurse_id
 
 st.info(
-    "右側のタイムラインを上下にスクロールすると、左側の業務種別も連動して上下に動きます。"
+    "右側タイムラインと左側業務種別の上下スクロールを連動します。"
+    "横スクロール位置は上下スクロール時に保持されます。"
 )
 
 st.markdown(
@@ -247,7 +251,7 @@ st.markdown(
     }}
 
     .task-panel::-webkit-scrollbar-thumb {{
-        background: #aaa;
+        background: #999;
         border-radius: 8px;
     }}
 
@@ -320,6 +324,11 @@ st.markdown(
     }}
 
     @media screen and (max-width: 900px) {{
+        section.main > div {{
+            padding-left: 0.4rem;
+            padding-right: 0.4rem;
+        }}
+
         .task-row {{
             font-size: 12px;
         }}
@@ -412,53 +421,156 @@ with right_col:
 components.html(
     """
     <script>
-    function findScrollableDataEditor() {
-        const doc = window.parent.document;
-        const frames = Array.from(doc.querySelectorAll('div[data-testid="stDataFrame"]'));
+    (function() {
+        let isSyncing = false;
+        let lastKnownScrollLeft = 0;
+        let attachedEditor = null;
+        let attachedTaskPanel = null;
 
-        for (const frame of frames) {
-            const descendants = Array.from(frame.querySelectorAll('*'));
-            for (const el of descendants) {
-                const style = window.parent.getComputedStyle(el);
-                const canScrollY =
-                    (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
-                    el.scrollHeight > el.clientHeight + 20;
+        function getDoc() {
+            return window.parent.document;
+        }
 
-                if (canScrollY) {
-                    return el;
+        function findTaskPanel() {
+            return getDoc().querySelector('#task-panel');
+        }
+
+        function isScrollableY(el) {
+            if (!el) return false;
+            const style = window.parent.getComputedStyle(el);
+            return (
+                (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
+                el.scrollHeight > el.clientHeight + 20
+            );
+        }
+
+        function isScrollableX(el) {
+            if (!el) return false;
+            const style = window.parent.getComputedStyle(el);
+            return (
+                (style.overflowX === 'auto' || style.overflowX === 'scroll') &&
+                el.scrollWidth > el.clientWidth + 20
+            );
+        }
+
+        function findEditorScrollElement() {
+            const doc = getDoc();
+            const frames = Array.from(doc.querySelectorAll('div[data-testid="stDataFrame"]'));
+
+            let best = null;
+            let bestScore = 0;
+
+            for (const frame of frames) {
+                const descendants = Array.from(frame.querySelectorAll('*'));
+
+                for (const el of descendants) {
+                    const hasY = isScrollableY(el);
+                    const hasX = isScrollableX(el);
+
+                    if (!hasY && !hasX) continue;
+
+                    const score =
+                        (hasY ? 1000 : 0) +
+                        (hasX ? 500 : 0) +
+                        el.scrollHeight +
+                        el.scrollWidth;
+
+                    if (score > bestScore) {
+                        best = el;
+                        bestScore = score;
+                    }
                 }
             }
+
+            return best;
         }
 
-        return null;
-    }
+        function syncVertical(source, target) {
+            if (!source || !target) return;
+            if (isSyncing) return;
 
-    function setupScrollSync() {
-        const doc = window.parent.document;
-        const taskPanel = doc.querySelector('#task-panel');
-        const editorScroll = findScrollableDataEditor();
+            isSyncing = true;
 
-        if (!taskPanel || !editorScroll) {
-            setTimeout(setupScrollSync, 500);
-            return;
+            const preservedLeft = attachedEditor ? attachedEditor.scrollLeft : lastKnownScrollLeft;
+
+            target.scrollTop = source.scrollTop;
+
+            if (attachedEditor) {
+                attachedEditor.scrollLeft = preservedLeft;
+                lastKnownScrollLeft = preservedLeft;
+            }
+
+            window.setTimeout(function() {
+                isSyncing = false;
+            }, 30);
         }
 
-        if (editorScroll.dataset.syncAttached === "1") {
-            return;
+        function attachSync() {
+            const taskPanel = findTaskPanel();
+            const editorScroll = findEditorScrollElement();
+
+            if (!taskPanel || !editorScroll) {
+                window.setTimeout(attachSync, 500);
+                return;
+            }
+
+            if (attachedEditor === editorScroll && attachedTaskPanel === taskPanel) {
+                return;
+            }
+
+            attachedEditor = editorScroll;
+            attachedTaskPanel = taskPanel;
+            lastKnownScrollLeft = editorScroll.scrollLeft || 0;
+
+            editorScroll.addEventListener('scroll', function() {
+                const currentLeft = editorScroll.scrollLeft;
+
+                if (currentLeft !== lastKnownScrollLeft) {
+                    lastKnownScrollLeft = currentLeft;
+                }
+
+                syncVertical(editorScroll, taskPanel);
+
+                if (editorScroll.scrollLeft !== lastKnownScrollLeft) {
+                    editorScroll.scrollLeft = lastKnownScrollLeft;
+                }
+            }, { passive: true });
+
+            taskPanel.addEventListener('scroll', function() {
+                syncVertical(taskPanel, editorScroll);
+
+                if (attachedEditor) {
+                    attachedEditor.scrollLeft = lastKnownScrollLeft;
+                }
+            }, { passive: true });
+
+            editorScroll.addEventListener('wheel', function() {
+                lastKnownScrollLeft = editorScroll.scrollLeft;
+            }, { passive: true });
+
+            editorScroll.addEventListener('touchmove', function() {
+                lastKnownScrollLeft = editorScroll.scrollLeft;
+            }, { passive: true });
         }
 
-        editorScroll.dataset.syncAttached = "1";
+        function watchDomChanges() {
+            const doc = getDoc();
 
-        editorScroll.addEventListener('scroll', function() {
-            taskPanel.scrollTop = editorScroll.scrollTop;
-        });
+            const observer = new MutationObserver(function() {
+                window.setTimeout(attachSync, 300);
+            });
 
-        taskPanel.addEventListener('scroll', function() {
-            editorScroll.scrollTop = taskPanel.scrollTop;
-        });
-    }
+            observer.observe(doc.body, {
+                childList: true,
+                subtree: true
+            });
+        }
 
-    setTimeout(setupScrollSync, 800);
+        window.setTimeout(attachSync, 800);
+        window.setTimeout(attachSync, 1500);
+        window.setTimeout(attachSync, 2500);
+        watchDomChanges();
+    })();
     </script>
     """,
     height=0,
