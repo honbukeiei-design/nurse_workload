@@ -13,18 +13,30 @@ st.set_page_config(
     layout="wide"
 )
 
-APP_PASSWORD = st.secrets["APP_PASSWORD"]
-APPS_SCRIPT_URL = st.secrets["APPS_SCRIPT_URL"]
+# ==================================================
+# Secrets
+# ==================================================
+APP_PASSWORD = st.secrets.get("APP_PASSWORD", "nurse2026")
+APPS_SCRIPT_URL = st.secrets.get(
+    "APPS_SCRIPT_URL",
+    "https://script.google.com/macros/s/AKfycbxYazh2-dc6TpuelU55rOlNIl_cFW2pWmeGvwGchuxUhJni91FM45fYU4uSmpszTR1Z/exec"
+)
 
+# ==================================================
+# 表示設定
+# ==================================================
 EDITOR_HEIGHT = 520
 ROW_HEIGHT = 42
 TASK_COL_WIDTH = 220
-CELL_WIDTH = 54
+CELL_WIDTH = 56
 
 SAVE_DIR = Path("data")
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 DRAFT_FILE = SAVE_DIR / "nurse_draft.json"
 
+# ==================================================
+# 業務種別
+# ==================================================
 TASK_TYPES = [
     "食事", "排泄", "清潔", "安全", "安楽",
     "入院環境の整備", "自立の援助", "患者の移送・移動",
@@ -90,7 +102,9 @@ TIME_SLOTS = [
     for m in [0, 15, 30, 45]
 ]
 
-
+# ==================================================
+# 関数
+# ==================================================
 def send_to_google_sheet(records):
     response = requests.post(
         APPS_SCRIPT_URL,
@@ -107,11 +121,14 @@ def send_to_google_sheet(records):
 def next_time_label(start):
     hour, minute = map(int, start.split(":"))
     minute += 15
+
     if minute == 60:
         minute = 0
         hour += 1
+
     if hour >= 24:
         return "24:00"
+
     return f"{hour:02d}:{minute:02d}"
 
 
@@ -125,10 +142,10 @@ def normalize_timeline(data):
         if task not in TASK_TYPES:
             continue
 
-        clean_times = [
-            t for t in times
-            if t in TIME_SLOTS
-        ]
+        if not isinstance(times, list):
+            continue
+
+        clean_times = [t for t in times if t in TIME_SLOTS]
 
         if clean_times:
             clean[task] = sorted(list(set(clean_times)))
@@ -178,12 +195,15 @@ def delete_draft():
     if DRAFT_FILE.exists():
         DRAFT_FILE.unlink()
 
-
+# ==================================================
+# 認証
+# ==================================================
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
     st.title("看護業務 記録アプリ")
+
     password = st.text_input("パスワードを入力してください", type="password")
 
     if st.button("ログイン"):
@@ -195,6 +215,9 @@ if not st.session_state["authenticated"]:
 
     st.stop()
 
+# ==================================================
+# 初期化
+# ==================================================
 if "draft_loaded" not in st.session_state:
     load_draft()
     st.session_state["draft_loaded"] = True
@@ -202,6 +225,9 @@ if "draft_loaded" not in st.session_state:
 if "timeline_data" not in st.session_state:
     st.session_state["timeline_data"] = {}
 
+# ==================================================
+# 画面
+# ==================================================
 st.title("看護業務 記録アプリ")
 
 col_a, col_b, col_c = st.columns(3)
@@ -227,7 +253,7 @@ st.session_state["nurse_id"] = nurse_id
 storage_key = f"nursing_timeline_{selected_date.isoformat()}_{nurse_id or 'no_id'}"
 
 st.info(
-    "セル全体をタップできます。指またはマウスで横になぞると、通過したセルを連続入力できます。"
+    "セル全体をタップできます。指またはマウスで横になぞると、通過したセルを連続入力できます。業務種別をタップすると具体例を表示します。"
 )
 
 col1, col2, col3, col4 = st.columns(4)
@@ -247,7 +273,12 @@ with col4:
 if clear_clicked:
     st.session_state["timeline_data"] = {}
     streamlit_js_eval(
-        js_expressions=f"localStorage.removeItem('{storage_key}')",
+        js_expressions=f"""
+        localStorage.removeItem('{storage_key}');
+        try {{
+            window.parent.localStorage.removeItem('{storage_key}');
+        }} catch(e) {{}}
+        """,
         key="clear_storage"
     )
     st.success("入力内容を全消去しました。")
@@ -259,7 +290,12 @@ if load_clicked:
         json.dumps(st.session_state.get("timeline_data", {}), ensure_ascii=False)
     )
     streamlit_js_eval(
-        js_expressions=f"localStorage.setItem('{storage_key}', {draft_json})",
+        js_expressions=f"""
+        localStorage.setItem('{storage_key}', {draft_json});
+        try {{
+            window.parent.localStorage.setItem('{storage_key}', {draft_json});
+        }} catch(e) {{}}
+        """,
         key="load_to_storage"
     )
     st.success("途中保存を読み込みました。")
@@ -269,7 +305,12 @@ if delete_clicked:
     delete_draft()
     st.session_state["timeline_data"] = {}
     streamlit_js_eval(
-        js_expressions=f"localStorage.removeItem('{storage_key}')",
+        js_expressions=f"""
+        localStorage.removeItem('{storage_key}');
+        try {{
+            window.parent.localStorage.removeItem('{storage_key}');
+        }} catch(e) {{}}
+        """,
         key="delete_storage"
     )
     st.success("途中保存を削除しました。")
@@ -443,7 +484,7 @@ body {{
 
 @media screen and (max-width: 900px) {{
     .timeline-grid {{
-        grid-template-columns: 170px repeat({len(TIME_SLOTS)}, 58px);
+        grid-template-columns: 170px repeat({len(TIME_SLOTS)}, 60px);
     }}
 
     .task-name,
@@ -452,7 +493,7 @@ body {{
     }}
 
     .cell {{
-        min-width: 58px;
+        min-width: 60px;
     }}
 }}
 </style>
@@ -479,14 +520,38 @@ const timeSlots = {slots_json};
 const storageKey = "{storage_key}";
 let selected = {initial_json};
 
-const stored = localStorage.getItem(storageKey);
-if (stored) {{
+function readStored() {{
+    let stored = null;
+
     try {{
-        selected = JSON.parse(stored) || selected;
+        stored = window.parent.localStorage.getItem(storageKey);
     }} catch(e) {{}}
-}} else {{
-    localStorage.setItem(storageKey, JSON.stringify(selected));
+
+    if (!stored) {{
+        stored = localStorage.getItem(storageKey);
+    }}
+
+    if (stored) {{
+        try {{
+            selected = JSON.parse(stored) || selected;
+        }} catch(e) {{}}
+    }} else {{
+        saveSelected();
+    }}
 }}
+
+function saveSelected() {{
+    const value = JSON.stringify(selected);
+    localStorage.setItem(storageKey, value);
+
+    try {{
+        window.parent.localStorage.setItem(storageKey, value);
+    }} catch(e) {{}}
+
+    updateStatus();
+}}
+
+readStored();
 
 let isPointerDown = false;
 let dragMode = true;
@@ -495,11 +560,6 @@ let didMove = false;
 
 const grid = document.getElementById("timelineGrid");
 const statusText = document.getElementById("statusText");
-
-function saveSelected() {{
-    localStorage.setItem(storageKey, JSON.stringify(selected));
-    updateStatus();
-}}
 
 function countSelected() {{
     let count = 0;
@@ -717,7 +777,15 @@ submit_clicked = st.button(
 )
 
 stored_json = streamlit_js_eval(
-    js_expressions=f"localStorage.getItem('{storage_key}')",
+    js_expressions=f"""
+    (function() {{
+        let v = null;
+        try {{
+            v = window.localStorage.getItem('{storage_key}');
+        }} catch(e) {{}}
+        return v;
+    }})()
+    """,
     key=f"get_timeline_json_{selected_date}_{nurse_id}"
 )
 
@@ -770,7 +838,6 @@ if submit_clicked:
             st.info(
                 f"送信内容：{selected_date.isoformat()} / {ward_name} / {nurse_id}"
             )
-
         else:
             st.error("Apps Script側から成功応答が返っていません。")
             st.write(result)
