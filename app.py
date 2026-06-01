@@ -95,10 +95,8 @@ def create_empty_grid():
 
     for task in TASK_TYPES:
         row = {"業務種別": task}
-
         for t in TIME_SLOTS:
             row[t] = False
-
         rows.append(row)
 
     return pd.DataFrame(rows)
@@ -197,7 +195,6 @@ if "editor_df" not in st.session_state:
         st.session_state["timeline_data"]
     )
 
-
 st.title("看護業務 記録アプリ")
 
 col_a, col_b, col_c = st.columns(3)
@@ -224,13 +221,15 @@ st.session_state["ward_name"] = ward_name
 st.session_state["nurse_id"] = nurse_id
 
 st.info(
-    "業務ごとに、実施した15分枠へチェックを入れてください。"
-    "チェック中は画面更新されません。入力後に「入力内容を反映」を押してください。"
+    "チェック中は画面更新されません。横にスクロールして入力し、最後に「入力内容を反映」を押してください。"
 )
 
 st.markdown(
     """
     <style>
+    /*
+    上部操作ボタンを固定
+    */
     div[data-testid="stHorizontalBlock"] {
         position: sticky;
         top: 0;
@@ -240,28 +239,82 @@ st.markdown(
         border-bottom: 1px solid #ddd;
     }
 
-    div[data-testid="stDataFrame"] div[role="gridcell"]:nth-child(1),
-    div[data-testid="stDataFrame"] div[role="columnheader"]:nth-child(1) {
-        position: sticky !important;
-        left: 0 !important;
-        z-index: 5 !important;
-        background: #f7f7f7 !important;
-        font-weight: bold !important;
+    /*
+    data_editorの中を横スクロールしやすくする
+    */
+    div[data-testid="stDataFrame"] {
+        border: 1px solid #ddd;
+        border-radius: 8px;
     }
 
-    div[data-testid="stDataFrame"] div[role="columnheader"] {
+    /*
+    業務種別列を左固定に近い見え方にする
+    Streamlit内部DOMに依存するため、環境により効き方に差があります
+    */
+    div[data-testid="stDataFrame"] [data-testid="stDataFrameResizable"] {
+        overflow: auto;
+    }
+
+    div[data-testid="stDataFrame"] div[role="gridcell"]:nth-child(2),
+    div[data-testid="stDataFrame"] div[role="columnheader"]:nth-child(2) {
         position: sticky !important;
-        top: 0 !important;
-        z-index: 4 !important;
+        left: 0 !important;
+        z-index: 20 !important;
+        background: #f7f7f7 !important;
+        font-weight: 700 !important;
+        box-shadow: 2px 0 4px rgba(0,0,0,0.12);
+    }
+
+    /*
+    時刻ヘッダーを見やすく
+    */
+    div[data-testid="stDataFrame"] div[role="columnheader"] {
         background: #eeeeee !important;
+        font-size: 12px !important;
+        font-weight: 700 !important;
+    }
+
+    /*
+    チェックボックスをセルいっぱいに近づける
+    */
+    div[data-testid="stDataFrame"] div[role="gridcell"] {
+        padding: 0 !important;
+        min-width: 46px !important;
+    }
+
+    div[data-testid="stDataFrame"] input[type="checkbox"] {
+        width: 28px !important;
+        height: 28px !important;
+        transform: scale(1.35);
+        cursor: pointer;
+        accent-color: #1e88e5;
+    }
+
+    /*
+    チェックボックスのタップ領域を大きくする
+    */
+    div[data-testid="stDataFrame"] label {
+        width: 100% !important;
+        height: 100% !important;
+        min-height: 38px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        cursor: pointer !important;
+    }
+
+    /*
+    スマホでタップしやすい行高
+    */
+    div[data-testid="stDataFrame"] div[role="row"] {
+        min-height: 42px !important;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     clear_clicked = st.button("全消去", use_container_width=True)
@@ -271,6 +324,9 @@ with col2:
 
 with col3:
     load_clicked = st.button("途中保存読込", use_container_width=True)
+
+with col4:
+    delete_clicked = st.button("途中保存削除", use_container_width=True)
 
 if clear_clicked:
     st.session_state["timeline_data"] = {}
@@ -286,8 +342,30 @@ if load_clicked:
     st.success("途中保存を読み込みました。")
     st.rerun()
 
+if delete_clicked:
+    delete_draft()
+    st.session_state["timeline_data"] = {}
+    st.session_state["editor_df"] = create_empty_grid()
+    st.success("途中保存を削除しました。")
+    st.rerun()
 
-with st.form("timeline_input_form"):
+column_config = {
+    "業務種別": st.column_config.TextColumn(
+        "業務種別",
+        width="medium",
+        disabled=True
+    )
+}
+
+for t in TIME_SLOTS:
+    label = t if t.endswith(":00") else t[-2:]
+    column_config[t] = st.column_config.CheckboxColumn(
+        label,
+        width="small",
+        help=t
+    )
+
+with st.form("timeline_input_form", clear_on_submit=False):
 
     edited_df = st.data_editor(
         st.session_state["editor_df"],
@@ -296,12 +374,7 @@ with st.form("timeline_input_form"):
         height=720,
         disabled=["業務種別"],
         column_order=["業務種別"] + TIME_SLOTS,
-        column_config={
-            "業務種別": st.column_config.TextColumn(
-                "業務種別",
-                width="medium"
-            )
-        },
+        column_config=column_config,
         key="timeline_editor",
         num_rows="fixed"
     )
@@ -331,6 +404,9 @@ if reflect_clicked:
         st.warning("入力内容がありません。チェックを入れてから反映してください。")
 
 if save_clicked:
+    st.session_state["timeline_data"] = grid_to_timeline(
+        st.session_state.get("editor_df", create_empty_grid())
+    )
     save_draft()
 
     records = build_records(
@@ -343,7 +419,6 @@ if save_clicked:
     st.success(
         f"途中保存しました。現在 {len(records)} 件、合計 {len(records) * 15} 分です。"
     )
-
 
 records = build_records(
     st.session_state.get("timeline_data", {}),
@@ -381,7 +456,6 @@ else:
         "まだ反映済みの入力がありません。チェック後に「入力内容を反映」を押してください。"
     )
 
-
 st.divider()
 
 submit_clicked = st.button(
@@ -391,7 +465,6 @@ submit_clicked = st.button(
 )
 
 if submit_clicked:
-
     records = build_records(
         st.session_state.get("timeline_data", {}),
         ward_name,
