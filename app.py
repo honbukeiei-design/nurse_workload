@@ -98,7 +98,6 @@ def send_to_google_sheet(records):
         timeout=30
     )
     response.raise_for_status()
-
     try:
         return response.json()
     except Exception:
@@ -108,14 +107,11 @@ def send_to_google_sheet(records):
 def next_time_label(start):
     hour, minute = map(int, start.split(":"))
     minute += 15
-
     if minute == 60:
         minute = 0
         hour += 1
-
     if hour >= 24:
         return "24:00"
-
     return f"{hour:02d}:{minute:02d}"
 
 
@@ -188,7 +184,6 @@ if "authenticated" not in st.session_state:
 
 if not st.session_state["authenticated"]:
     st.title("看護業務 記録アプリ")
-
     password = st.text_input("パスワードを入力してください", type="password")
 
     if st.button("ログイン"):
@@ -260,11 +255,11 @@ if clear_clicked:
 
 if load_clicked:
     load_draft()
+    draft_json = json.dumps(
+        json.dumps(st.session_state.get("timeline_data", {}), ensure_ascii=False)
+    )
     streamlit_js_eval(
-        js_expressions=(
-            f"localStorage.setItem('{storage_key}', "
-            f"{json.dumps(json.dumps(st.session_state.get('timeline_data', {}), ensure_ascii=False))})"
-        ),
+        js_expressions=f"localStorage.setItem('{storage_key}', {draft_json})",
         key="load_to_storage"
     )
     st.success("途中保存を読み込みました。")
@@ -390,40 +385,8 @@ body {{
     box-shadow: inset 0 0 0 2px #ffffff;
 }}
 
-.cell.drag-preview {{
-    outline: 2px solid #111827;
-    outline-offset: -2px;
-}}
-
 .cell:active {{
     background: #bfdbfe;
-}}
-
-.controls {{
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 8px;
-    margin-top: 10px;
-}}
-
-.btn {{
-    width: 100%;
-    border: 0;
-    border-radius: 8px;
-    padding: 12px 10px;
-    font-size: 16px;
-    font-weight: 800;
-    cursor: pointer;
-}}
-
-.btn-reflect {{
-    background: #e5e7eb;
-    color: #111827;
-}}
-
-.btn-submit {{
-    background: #1e88e5;
-    color: #ffffff;
 }}
 
 .status {{
@@ -500,11 +463,6 @@ body {{
     <div class="timeline-grid" id="timelineGrid"></div>
 </div>
 
-<div class="controls">
-    <button class="btn btn-reflect" id="reflectBtn">入力内容を反映</button>
-    <button class="btn btn-submit" id="submitBtn">提出</button>
-</div>
-
 <div class="status" id="statusText"></div>
 
 <div class="modal-backdrop" id="modalBackdrop"></div>
@@ -532,8 +490,7 @@ if (stored) {{
 
 let isPointerDown = false;
 let dragMode = true;
-let activePointerId = null;
-let lastCellKey = null;
+let lastCellKey = "";
 let didMove = false;
 
 const grid = document.getElementById("timelineGrid");
@@ -588,6 +545,7 @@ function setCell(cell, mode) {{
     }} else {{
         selected[task] = selected[task].filter(t => t !== time);
         cell.classList.remove("selected");
+
         if (selected[task].length === 0) {{
             delete selected[task];
         }}
@@ -660,11 +618,13 @@ function onPointerDown(e) {{
     const cell = e.currentTarget;
     isPointerDown = true;
     didMove = false;
-    activePointerId = e.pointerId;
     lastCellKey = cellKey(cell);
     dragMode = !cell.classList.contains("selected");
 
-    cell.setPointerCapture(activePointerId);
+    try {{
+        cell.setPointerCapture(e.pointerId);
+    }} catch(err) {{}}
+
     setCell(cell, dragMode);
     e.preventDefault();
 }}
@@ -706,15 +666,13 @@ function onCellClick(e) {{
 
 document.addEventListener("pointerup", () => {{
     isPointerDown = false;
-    activePointerId = null;
-    lastCellKey = null;
+    lastCellKey = "";
     setTimeout(() => {{ didMove = false; }}, 60);
 }});
 
 document.addEventListener("pointercancel", () => {{
     isPointerDown = false;
-    activePointerId = null;
-    lastCellKey = null;
+    lastCellKey = "";
     didMove = false;
 }});
 
@@ -733,18 +691,6 @@ function closeModal() {{
 document.getElementById("modalClose").addEventListener("click", closeModal);
 document.getElementById("modalBackdrop").addEventListener("click", closeModal);
 
-document.getElementById("reflectBtn").addEventListener("click", () => {{
-    localStorage.setItem(storageKey + "_action", "reflect");
-    localStorage.setItem(storageKey, JSON.stringify(selected));
-    window.parent.location.reload();
-}});
-
-document.getElementById("submitBtn").addEventListener("click", () => {{
-    localStorage.setItem(storageKey + "_action", "submit");
-    localStorage.setItem(storageKey, JSON.stringify(selected));
-    window.parent.location.reload();
-}});
-
 buildGrid();
 </script>
 
@@ -754,25 +700,34 @@ buildGrid();
 
 components.html(
     html_code,
-    height=EDITOR_HEIGHT + 120,
+    height=EDITOR_HEIGHT + 45,
     scrolling=False
 )
 
-action = streamlit_js_eval(
-    js_expressions=f"localStorage.getItem('{storage_key}_action')",
-    key="get_action"
+reflect_clicked = st.button(
+    "入力内容を反映",
+    type="secondary",
+    use_container_width=True
+)
+
+submit_clicked = st.button(
+    "提出",
+    type="primary",
+    use_container_width=True
 )
 
 stored_json = streamlit_js_eval(
     js_expressions=f"localStorage.getItem('{storage_key}')",
-    key="get_timeline_json"
+    key=f"get_timeline_json_{selected_date}_{nurse_id}"
 )
 
 if stored_json:
     try:
-        st.session_state["timeline_data"] = normalize_timeline(json.loads(stored_json))
+        st.session_state["timeline_data"] = normalize_timeline(
+            json.loads(stored_json)
+        )
     except Exception:
-        pass
+        st.warning("入力内容の読み取りに失敗しました。")
 
 records = build_records(
     st.session_state.get("timeline_data", {}),
@@ -781,13 +736,7 @@ records = build_records(
     selected_date
 )
 
-if action in ["reflect", "submit"]:
-    streamlit_js_eval(
-        js_expressions=f"localStorage.removeItem('{storage_key}_action')",
-        key="clear_action"
-    )
-
-if action == "reflect":
+if reflect_clicked:
     if records:
         st.success(
             f"入力内容を反映しました。現在 {len(records)} 件、合計 {len(records) * 15} 分です。"
@@ -796,7 +745,7 @@ if action == "reflect":
     else:
         st.warning("入力内容がありません。セルをタップまたはなぞってから反映してください。")
 
-if action == "submit":
+if submit_clicked:
     if not ward_name:
         st.warning("病棟名称を入力してください。")
         st.stop()
@@ -809,19 +758,18 @@ if action == "submit":
         st.warning("入力データがありません。セルをタップまたはなぞってから提出してください。")
         st.stop()
 
-    df_daily = pd.DataFrame(records)
-
     try:
         result = send_to_google_sheet(records)
 
         if result.get("status") == "success":
             delete_draft()
-
-            sent_count = result.get("count", len(records))
-
             st.balloons()
-            st.success(f"スプレッドシートへ反映完了しました。送信件数：{sent_count} 件。")
-            st.info(f"送信内容：{selected_date.isoformat()} / {ward_name} / {nurse_id}")
+            st.success(
+                f"スプレッドシートへ反映完了しました。送信件数：{result.get('count', len(records))} 件。"
+            )
+            st.info(
+                f"送信内容：{selected_date.isoformat()} / {ward_name} / {nurse_id}"
+            )
 
         else:
             st.error("Apps Script側から成功応答が返っていません。")
@@ -833,7 +781,9 @@ if action == "submit":
 
 if save_clicked:
     save_draft()
-    st.success(f"途中保存しました。現在 {len(records)} 件、合計 {len(records) * 15} 分です。")
+    st.success(
+        f"途中保存しました。現在 {len(records)} 件、合計 {len(records) * 15} 分です。"
+    )
 
 st.divider()
 st.subheader("参考：入力内容")
