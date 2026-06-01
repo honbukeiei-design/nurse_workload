@@ -4,6 +4,7 @@ from datetime import date
 from pathlib import Path
 import json
 import requests
+import streamlit.components.v1 as components
 
 st.set_page_config(
     page_title="看護業務 記録アプリ",
@@ -12,6 +13,9 @@ st.set_page_config(
 
 APP_PASSWORD = st.secrets["APP_PASSWORD"]
 APPS_SCRIPT_URL = st.secrets["APPS_SCRIPT_URL"]
+
+EDITOR_HEIGHT = 520
+ROW_HEIGHT = 35
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -88,8 +92,7 @@ def next_time_label(start):
 
 def create_empty_grid():
     rows = []
-
-    for task in TASK_TYPES:
+    for _ in TASK_TYPES:
         row = {}
         for t in TIME_SLOTS:
             row[t] = False
@@ -186,7 +189,6 @@ if "editor_df" not in st.session_state:
         st.session_state["timeline_data"]
     )
 
-
 st.title("看護業務 記録アプリ")
 
 col_a, col_b, col_c = st.columns(3)
@@ -210,34 +212,46 @@ st.session_state["ward_name"] = ward_name
 st.session_state["nurse_id"] = nurse_id
 
 st.info(
-    "左側に業務種別を固定表示し、右側のタイムラインだけを横スクロールして入力します。"
+    "右側のタイムラインを上下にスクロールすると、左側の業務種別も連動して上下に動きます。"
 )
 
 st.markdown(
-    """
+    f"""
     <style>
-    section.main > div {
+    section.main > div {{
         max-width: 100%;
-    }
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }}
 
-    div[data-testid="stHorizontalBlock"] {
+    div[data-testid="stHorizontalBlock"] {{
         position: sticky;
         top: 0;
         background: white;
         z-index: 1000;
         padding: 8px 0;
         border-bottom: 1px solid #ddd;
-    }
+    }}
 
-    .task-panel {
-        height: 620px;
-        overflow: hidden;
+    .task-panel {{
+        height: {EDITOR_HEIGHT}px;
+        overflow-y: auto;
+        overflow-x: hidden;
         border: 1px solid #ddd;
         border-radius: 8px;
         background: #f7f7f7;
-    }
+    }}
 
-    .task-header {
+    .task-panel::-webkit-scrollbar {{
+        width: 10px;
+    }}
+
+    .task-panel::-webkit-scrollbar-thumb {{
+        background: #aaa;
+        border-radius: 8px;
+    }}
+
+    .task-header {{
         height: 38px;
         line-height: 38px;
         padding-left: 10px;
@@ -247,27 +261,27 @@ st.markdown(
         position: sticky;
         top: 0;
         z-index: 20;
-    }
+    }}
 
-    .task-row {
-        height: 35px;
-        line-height: 35px;
+    .task-row {{
+        height: {ROW_HEIGHT}px;
+        line-height: {ROW_HEIGHT}px;
         padding-left: 10px;
         border-bottom: 1px solid #e1e1e1;
         font-size: 14px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-    }
+    }}
 
-    div[data-testid="stDataFrame"] {
-        height: 620px !important;
+    div[data-testid="stDataFrame"] {{
+        height: {EDITOR_HEIGHT}px !important;
         border: 1px solid #ddd;
         border-radius: 8px;
         overflow: hidden;
-    }
+    }}
 
-    div[data-testid="stDataFrame"] div[role="columnheader"] {
+    div[data-testid="stDataFrame"] div[role="columnheader"] {{
         position: sticky !important;
         top: 0 !important;
         z-index: 50 !important;
@@ -275,55 +289,41 @@ st.markdown(
         font-size: 12px !important;
         font-weight: 700 !important;
         border-bottom: 2px solid #aaa !important;
-    }
+    }}
 
-    div[data-testid="stDataFrame"] div[role="gridcell"] {
+    div[data-testid="stDataFrame"] div[role="gridcell"] {{
         padding: 0 !important;
         min-width: 48px !important;
-        min-height: 35px !important;
-    }
+        min-height: {ROW_HEIGHT}px !important;
+    }}
 
-    div[data-testid="stDataFrame"] div[role="row"] {
-        min-height: 35px !important;
-    }
+    div[data-testid="stDataFrame"] div[role="row"] {{
+        min-height: {ROW_HEIGHT}px !important;
+    }}
 
-    div[data-testid="stDataFrame"] input[type="checkbox"] {
+    div[data-testid="stDataFrame"] input[type="checkbox"] {{
         width: 28px !important;
         height: 28px !important;
         transform: scale(1.35);
         cursor: pointer;
         accent-color: #1e88e5;
-    }
+    }}
 
-    div[data-testid="stDataFrame"] label {
+    div[data-testid="stDataFrame"] label {{
         width: 100% !important;
         height: 100% !important;
-        min-height: 35px !important;
+        min-height: {ROW_HEIGHT}px !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
         cursor: pointer !important;
-    }
+    }}
 
-    @media screen and (max-width: 900px) {
-        .task-row {
+    @media screen and (max-width: 900px) {{
+        .task-row {{
             font-size: 12px;
-            height: 35px;
-            line-height: 35px;
-        }
-
-        .task-header {
-            font-size: 13px;
-        }
-
-        div[data-testid="stDataFrame"] {
-            height: 560px !important;
-        }
-
-        .task-panel {
-            height: 560px;
-        }
-    }
+        }}
+    }}
     </style>
     """,
     unsafe_allow_html=True
@@ -374,11 +374,11 @@ for t in TIME_SLOTS:
         help=t
     )
 
-left_col, right_col = st.columns([1.35, 8.65], gap="small")
+left_col, right_col = st.columns([1.3, 8.7], gap="small")
 
 with left_col:
     task_html = """
-    <div class="task-panel">
+    <div class="task-panel" id="task-panel">
         <div class="task-header">業務種別</div>
     """
 
@@ -396,7 +396,7 @@ with right_col:
             st.session_state["editor_df"],
             hide_index=True,
             use_container_width=True,
-            height=620,
+            height=EDITOR_HEIGHT,
             column_order=TIME_SLOTS,
             column_config=column_config,
             key="timeline_editor",
@@ -408,6 +408,61 @@ with right_col:
             type="primary",
             use_container_width=True
         )
+
+components.html(
+    """
+    <script>
+    function findScrollableDataEditor() {
+        const doc = window.parent.document;
+        const frames = Array.from(doc.querySelectorAll('div[data-testid="stDataFrame"]'));
+
+        for (const frame of frames) {
+            const descendants = Array.from(frame.querySelectorAll('*'));
+            for (const el of descendants) {
+                const style = window.parent.getComputedStyle(el);
+                const canScrollY =
+                    (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
+                    el.scrollHeight > el.clientHeight + 20;
+
+                if (canScrollY) {
+                    return el;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    function setupScrollSync() {
+        const doc = window.parent.document;
+        const taskPanel = doc.querySelector('#task-panel');
+        const editorScroll = findScrollableDataEditor();
+
+        if (!taskPanel || !editorScroll) {
+            setTimeout(setupScrollSync, 500);
+            return;
+        }
+
+        if (editorScroll.dataset.syncAttached === "1") {
+            return;
+        }
+
+        editorScroll.dataset.syncAttached = "1";
+
+        editorScroll.addEventListener('scroll', function() {
+            taskPanel.scrollTop = editorScroll.scrollTop;
+        });
+
+        taskPanel.addEventListener('scroll', function() {
+            editorScroll.scrollTop = taskPanel.scrollTop;
+        });
+    }
+
+    setTimeout(setupScrollSync, 800);
+    </script>
+    """,
+    height=0,
+)
 
 if reflect_clicked:
     st.session_state["editor_df"] = edited_df.copy()
